@@ -1,8 +1,10 @@
 package FGJPoly {
 
-  class Typechecker(cEnv : Map[String,ClassDecl] = Map(),
-                    tEnv : Map[String,Type] = Map(),
-                    env : Map[String,Type] = Map(),
+
+  class Typechecker(cEnv : Map[Ident,ClassDecl] = Map(),
+                    kEnv : Set[Ident] = Set(),
+                    tEnv : Map[Ident,Either[Kind,Type]] = Map(),
+                    env : Map[Ident,Type] = Map(),
                     thisType : Option[Type] = None) {
     def assertTypeIsWellFormed(ty : Type) : Unit = ty match {
       case Top => ()
@@ -11,123 +13,102 @@ package FGJPoly {
           return
         if(!cEnv.contains(nm))
           throw new Exception("undeclared type " + nm)
-        if(cEnv.get(nm).get.params.length != 0)
+        if(cEnv(nm).params.nonEmpty)
           throw new Exception("incorrect number of type parameters for type " + nm)
       }
       case TClass(nm,actuals) => {
-        val c : ClassDecl = cEnv get nm getOrElse({
-          throw new Exception("unknown class " + ty)
-        })
-        val upperBounds = c.params.map(_.upperBound)
-        if(upperBounds.length != actuals.length)
+        val c : ClassDecl = cEnv getOrElse(nm, throw new Exception("unknown class " + ty))
+        val kindOrBounds = c.params.map(_.kindOrBound)
+        if(kindOrBounds.length != actuals.length)
           throw new Exception("incorrect number of types parameters for type " + nm)
         else
-          actuals.zip(upperBounds).foreach(_ match {
-            case (_,None) => ()
-            case (sub,Some(sup)) => assertIsSubtypeOf(sub,sup)
+          actuals.zip(kindOrBounds).foreach({
+            case (ty,Left(k)) => assert(tcType(ty) == k, "class type parameter has wrong kind")
+            case (sub,Right(sup)) => assertIsSubtypeOf(sub,sup)
           })
       }
-      case TForall(params,ty) => updateTEnv(_ ++ params.map(d => d.nm -> d.upperBound.getOrElse(Top))).assertTypeIsWellFormed(ty)
+      case TForallTy(nm,kindOrBound,ty) => addTypeVar(nm,kindOrBound).assertTypeIsWellFormed(ty)
     }
 
-    def updateTEnv(f : Map[String,Type] => Map[String,Type]) : Typechecker = new Typechecker(cEnv, f(tEnv), env, thisType)
-
-    def unifySubtype(ftvs : Set[String], sub : Type, sup : Type) : Map[String,Type] = {
-      // find assignments to ftvs occurring in sub that makes it a subtype of sup.
-
-      // if sub is a type variable, then assign it.
-      // if sub is a class, then
-      (sub,sup) match {
-        // not sure we need this case...
-        case (TClass(nm, List()), sup) if ftvs contains(nm) => Map(nm -> sup)
-        case (Top,Top) => Map()
-        case (Top,_) => throw new Exception("Top is not a subtype of any type")
-        case (TClass(nm1, params1), TClass(nm2,params2)) if nm1 == nm2 => unifyAll(ftvs, params1, params2)
-        case _ => {
-          try {
-            unifySubtype(ftvs, getParentType(sub), sup)
-          } catch {
-            case e : Exception => throw new Exception(sub + " is not a subtype of " + sup)
-          }
-        }
-      }
-    }
-
-    def unifyAll(ftvs : Set[String], tys1 : List[Type], tys2 : List[Type]) : Map[String,Type] =
-      (tys1,tys2) match {
-        case (hd1::tl1, hd2::tl2) => {
-          val subst1 = unifyAll(ftvs, tl1, tl2)
-          val subst2 = unify(ftvs, substTy(subst1,hd1), substTy(subst1,hd2))
-          composeSubsts(subst2, subst1)
-        }
-        case (Nil,Nil) => Map()
-      }
-
-    def unify(ftvs : Set[String], ty1 : Type, ty2 : Type) : Map[String,Type] = (ty1,ty2) match {
-      case (TClass(nm, List()),_) if ftvs contains(nm) => Map(nm -> ty2)
-      case (TClass(nm1, params1),TClass(nm2,params2)) if nm1 == nm2 => unifyAll(ftvs, params1, params2)
-      case (Top,Top) => Map()
-      case _ => throw new Exception("unify failed")
-    }
+    def addTypeVar(nm : Ident, kindOrBound : Either[Kind,Type]) : Typechecker =
+      new Typechecker(cEnv, kEnv, tEnv + (nm -> kindOrBound), env, thisType)
+    def addKindVar(nm : Ident) : Typechecker = new Typechecker(cEnv, kEnv + nm, tEnv, env, thisType)
 
     // subst1 is newer than subst2. apply subst1 to each type in subst2, then extend the resulting
     // substitution with subst1's entries
-    def composeSubsts(subst1 : Map[String,Type], subst2 : Map[String,Type]) : Map[String,Type] = {
+    def composeSubsts(subst1 : Map[Ident,Type], subst2 : Map[Ident,Type]) : Map[Ident,Type] = {
       subst2.mapValues(substTy(subst1,_)) ++ subst1
     }
 
     def getParentType(t : Type) : Type = t match {
       case Top => throw new Exception("Top has no parent type")
       case TClass(nm,params) => {
-        val classDecl = cEnv.get(nm).getOrElse(throw new Exception("undeclared class " + nm))
-        val subst : Map[String,Type] = Map() ++ classDecl.params.map(_.nm).zip(params)
+        val classDecl = cEnv.getOrElse(nm,throw new Exception("undeclared class " + nm))
+        val subst : Map[Ident,Type] = Map() ++ classDecl.params.map(_.nm).zip(params)
         substTy(subst,classDecl.superClass)
       }
-      case TForall(_,_) => throw new Exception("Forall types have no parent types")
+      case TForallTy(_,_,_) => throw new Exception("Forall types have no parent types")
     }
 
-    // how do we represent type abstraction?
-    // [A] new Nil<A>();  // polymorphic nil value of type [A] List<A>
-    // [A] Expr<List<A>>
-    // strip functions:
-    // class StripExpr<T> {
-    //   <A> T strip(Expr<A> e) { ... }
-    // }
-    // class Strip<T> {
-    //   this is useless: just a constant T function
-    //   <A> T strip(A e) { ... }
-    // }
+    def substKind(kSubst : Map[Ident,Kind], k : Kind) : Kind = k match {
+      case Star => Star
+      case KVar(nm) => kSubst getOrElse(nm,k)
+      case KArr(k1,k2) => KArr(substKind(kSubst,k1),substKind(kSubst,k2))
+      case KForall(nm,k1) => {
+        val nm1 = freshen(nm)
+        KForall(nm1,substKind(kSubst + (nm -> KVar(nm1)), k1))
+      }
+    }
 
-    def assertIsConvertibleTo(from : Type, to : Type) : Unit = {
-      try {
-        from match {
-          case TForall(_, _) => assertIsInstantiationOf(to, from)
-          case _ => assertIsSubtypeOf(from, to)
+    def normalizeTy (t:Type, tSubst : Map[Ident,Type] = Map(), kSubst : Map[Ident,Kind] = Map()) : Type = t match {
+      case TClass(nm, List()) => tSubst get(nm) getOrElse(t)
+      case TTApp(t1,t2) => normalizeTy(t1,tSubst,kSubst) match {
+        case TTAbs(nm,_,bdy) => {
+          val t2nf = normalizeTy(t2,tSubst,kSubst)
+          normalizeTy(bdy,tSubst + (nm -> t2nf),kSubst)
         }
       }
-      catch {
-        case e : Exception => throw new Exception(from + " is not convertible to " + to)
+      case TKApp(t,k) => normalizeTy(t,tSubst,kSubst) match {
+        case TKAbs(nm,bdy) => normalizeTy(bdy,tSubst,kSubst + (nm -> k))
       }
-    }
-
-    def assertIsInstantiationOf(inst: Type, forall: Type) = (forall,inst) match {
-      case (TForall(vs,TClass(nm1,ps1)), TClass(nm2,ps2))
-        if nm1 == nm2 && ps1.length == ps2.length => {
-          val nms = vs.map(_.nm)
-          val upperBounds = Map() ++ vs.map(d => (d.nm,  d.upperBound))
-          val subst = unifyAll(Set() ++ nms, ps1, ps2)
-          nms.foreach(nm => assertIsSubtypeOf(subst(nm), upperBounds(nm).getOrElse(Top)))
+      case TTAbs(nm,kindOrBound,bdy) => {
+        val nm1 = freshen(nm)
+        val kindOrBound1 = kindOrBound match {
+          case Left(k)  => Left(substKind(kSubst,k))
+          case Right(t) => Right(normalizeTy(t,tSubst,kSubst))
+        }
+        TTAbs(nm1,kindOrBound,normalizeTy(bdy,tSubst + (nm -> TClass(nm1,List())),kSubst))
+      }
+      case TForallTy(nm,kindOrBound,bdy) => {
+        val nm1 = freshen(nm)
+        val kindOrBound1 = kindOrBound match {
+          case Left(k)  => Left(substKind(kSubst,k))
+          case Right(t) => Right(normalizeTy(t,tSubst,kSubst))
+        }
+        TForallTy(nm1,kindOrBound,normalizeTy(bdy,tSubst + (nm -> TClass(nm1,List())),kSubst))
+      }
+      case TKAbs(nm,bdy) => {
+        val nm1 = freshen(nm)
+        TKAbs(nm1,normalizeTy(bdy,tSubst,kSubst + (nm -> KVar(nm1))))
+      }
+      case TForallK(nm,bdy) => {
+        val nm1 = freshen(nm)
+        TForallK(nm1,normalizeTy(bdy,tSubst,kSubst + (nm -> KVar(nm1))))
       }
     }
 
     def assertIsSubtypeOf(sub : Type, sup : Type) : Unit = {
       // precondition: sub and sup are both valid types
       if(sub == sup) return
-      if(sup == Top) return
       sub match {
-        case TClass(nm,List()) if tEnv contains(nm) => assertIsSubtypeOf(tEnv get(nm) get, sup)
-        case TClass(nm,params)  => assertIsSubtypeOf(getParentType(sub), sup)
-        case TForall(params,ty) => throw new Exception("forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
+        case TClass(nm,List()) if tEnv contains(nm) => {
+          val kindOrBound : Either[Kind,Type] = tEnv get(nm) get
+          val parent : Type = kindOrBound.getOrElse(throw new Exception("assertSubtypeOf: type variable is not kind *"))
+          assertIsSubtypeOf(parent, sup)
+        }
+        case TClass(nm,params) => assertIsSubtypeOf(getParentType(sub), sup)
+        case TForallTy(_,_,_)  => throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
+        case TForallK(_,_)     => throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
       }
     }
 
@@ -139,7 +120,7 @@ package FGJPoly {
           throw new Exception("class " + d.nm + " already declared")
       })
 
-      val tc = new Typechecker(cEnv ++ ds.map(d => d.nm -> d), tEnv, env, thisType)
+      val tc = new Typechecker(cEnv ++ ds.map(d => d.nm -> d), kEnv, tEnv, env, thisType)
 
       // typecheck last, so all the recursion/mutual recursion will work
       ds.foreach(d => {
@@ -150,8 +131,8 @@ package FGJPoly {
     }
 
     def addTVarDecl(d : TVarDecl) : Typechecker = {
-      d.upperBound.foreach(assertTypeIsWellFormed(_))
-      new Typechecker(cEnv, tEnv + (d.nm -> d.upperBound.getOrElse(Top)), env, thisType)
+      d.kindOrBound.foreach(assertTypeIsWellFormed(_))
+      new Typechecker(cEnv, kEnv, tEnv + (d.nm -> d.kindOrBound), env, thisType)
     }
     def addTVarDecls(decls: List[TVarDecl]) : Typechecker = {
       decls.foldLeft(this)({case (tc,d) => tc.addTVarDecl(d)})
@@ -159,20 +140,26 @@ package FGJPoly {
 
     def addVarDecls(decls: List[VarDecl]) : Typechecker = {
       decls.foreach(d => assertTypeIsWellFormed(d.ty))
-      new Typechecker(cEnv, tEnv, env ++ decls.map(d => d.nm -> d.ty), thisType)
+      new Typechecker(cEnv, kEnv, tEnv, env ++ decls.map(d => d.nm -> d.ty), thisType)
     }
 
-    def setThisType(ty : Type) : Typechecker = new Typechecker(cEnv, tEnv, env, Some(ty))
+    def setThisType(ty : Type) : Typechecker = new Typechecker(cEnv, kEnv, tEnv, env, Some(ty))
 
+    def tcType(t : Type) : Kind = t match{
+      case TForallTy(nm,kindOrBound,bdy) => {
+        assert(addTypeVar(nm,kindOrBound).tcType(bdy) == Star, "Forall type body failed to kind-check")
+        Star
+      }
+      case TForallK(nm,bdy) => {
+        assert(addKindVar(nm).tcType(bdy) == Star, "Forall kind body failed to kind-check")
+        Star
+      }
+
+    }
     def tcExpr(e : Expr) : Type = e match {
       case Var(nm) => env get nm getOrElse(throw new Exception("undeclared variable " + nm))
       case Field(obj,nm) => lookupFieldType(tcExpr(obj),nm)
       case This => thisType get
-      case Cast(ty,e) => {
-        assertTypeIsWellFormed(ty)
-        assertIsConvertibleTo(tcExpr(e),ty)
-        ty
-      }
       case Call(e,actualTys,nm,actuals) => {
         val m = lookupMethodSig(tcExpr(e),nm)
         assert(
@@ -180,7 +167,7 @@ package FGJPoly {
           "wrong number of type parameters in call: " + Call(e,actualTys,nm,actuals)
         )
         // check type parameter bounds
-        m.tParams.zip(actualTys).foreach { case (vd,ty) => assertIsSubtypeOf(ty,vd.upperBound.getOrElse(Top)) }
+        m.tParams.zip(actualTys).foreach { case (vd,ty) => vd.kindOrBound.foreach(assertIsSubtypeOf(ty,_)) }
         val subst = Map() ++ m.tParams.map(_.nm).zip(actualTys)
 
         // check we have the right number of parameters
@@ -194,8 +181,8 @@ package FGJPoly {
     }
 
     // require the decl to be in cEnv for recursion
-    def tcClassDecl(nm : String) : Unit = {
-      val c = cEnv get(nm) get
+    def tcClassDecl(nm : Ident) : Unit = {
+      val c : ClassDecl = cEnv get(nm) get
       // todo: check superclass, bounds are well-formed
       // todo: check field types are well-formed
       val tc = addTVarDecls(c.params).setThisType(TClass(c.nm,c.params.map(d => TClass(d.nm,List()))))
@@ -210,11 +197,12 @@ package FGJPoly {
       tc2.tcExpr(m.bdy)
     }
 
-    def substTy(subst : Map[String,Type], ty : Type) : Type = ty match {
+    def substTy(subst : Map[Ident,Type], ty : Type) : Type = ty match {
       case Top => Top
       case TClass(nm,List())  => subst get nm getOrElse(ty)  // type variable cannot have params
       case TClass(nm,params)  => TClass(nm, params map(substTy(subst,_))) // class with params cannot be a type variable
-      case TForall(params,ty) => TForall(params,substTy(subst -- params.map(_.nm), ty))
+      case TForallTy(nm,kindOrBound,bdy) => TForallTy(nm,kindOrBound.map(substTy(subst,_)),substTy(subst - nm, bdy))
+      case TForallK(nm,bdy) => TForallK(nm,substTy(subst,bdy))
     }
 
     def lookupFieldType(ty : Type, nm : String) : Type = {
@@ -224,7 +212,7 @@ package FGJPoly {
 
       if(classDecl.params.length != ty1.params.length)
         throw new Exception("lookupFieldType: wrong number of class type parameters")
-      val subst : Map[String,Type] = Map() ++ classDecl.params.map(_.nm).zip(ty1.params)
+      val subst : Map[Ident,Type] = Map() ++ classDecl.params.map(_.nm).zip(ty1.params)
       val fieldTy = classDecl.fields.filter(vd => vd.nm == nm)(0).ty
       substTy(subst,fieldTy)
     }
@@ -238,13 +226,13 @@ package FGJPoly {
 
       if(classDecl.params.length != ty1.params.length)
         throw new Exception("lookupFieldType: wrong number of class type parameters")
-      val subst : Map[String,Type] = Map() ++ classDecl.params.map(_.nm).zip(ty1.params)
+      val subst : Map[Ident,Type] = Map() ++ classDecl.params.map(_.nm).zip(ty1.params)
       val md = classDecl.methods.filter(m => m.nm == nm)(0)
       val sig = MethodSig(md.tParams,md.retTy,md.params.map(_.ty))
       substMethodSig(subst,sig)
     }
 
-    def substMethodSig(subst: Map[String, Type], m: MethodSig) : MethodSig = {
+    def substMethodSig(subst: Map[Ident, Type], m: MethodSig) : MethodSig = {
       val subst1 = subst -- m.tParams.map(vd => vd.nm)
       val retTy = substTy(subst1, m.retTy)
       val paramTypes = m.paramTypes.map(substTy(subst1,_))
