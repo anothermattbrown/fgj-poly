@@ -60,12 +60,16 @@ package FGJPoly {
     def tyVarDecl  : Parser[TVarDecl] = ident ~ kindAnnotationOrExtendsClause ^^ { case nm ~ kindOrBound => TVarDecl(nm,kindOrBound)}
     def tyFormals  : Parser[List[TVarDecl]] = angles(repsep(tyVarDecl, ",")) | success(List())
 
-    def ty         : Parser[Type] = tyTop | tyForallK | tyForallTy | tyClass
+    def ty         : Parser[Type] = tyTop | tyForallK | tyForallTy | tyLambdaTy | tyLambdaK | tyClass
     def tyTop      : Parser[Type] = "Top" ^^ { _ => Top }
     def tyClass    : Parser[Type] = ident ~ tyActuals ^^ { case nm ~ actuals => TClass(nm,actuals) }
     def tyForallTy : Parser[Type] = forall ~> ident ~ kindAnnotationOrExtendsClause ~ ("." ~> ty) ^^ {
       case nm ~ kindOrSuper ~ ty => TForallTy(nm, kindOrSuper, ty)}
+    def tyLambdaTy : Parser[Type] = lambda ~> ident ~ kindAnnotationOrExtendsClause ~ ("." ~> ty) ^^ {
+      case nm ~ kindOrSuper ~ ty => TTAbs(nm, kindOrSuper, ty)}
     def tyForallK  : Parser[Type] = (forallPlus ~> ident <~ ".") ~ ty ^^ { case nm ~ ty => TForallK(nm,ty)}
+    def tyLambdaK  : Parser[Type] = (Lambda ~> ident <~ ".") ~ ty ^^ { case nm ~ ty => TKAbs(nm,ty)}
+
 
     def forall     : Parser[Unit] = ("∀" | "forall")   ^^ {_ => ()}
     def forallPlus : Parser[Unit] = ("∀+" | "forall+") ^^ {_ => ()}

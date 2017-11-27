@@ -107,5 +107,24 @@ class TestParser extends FlatSpec with Matchers {
     val C = TClass("C", List())
     parser.parseTy("∀+K. ∀A:K.C").get should be (TForallK("K", TForallTy("A", Left(KVar("K")), C)))
   }
+  "parseTy" should "parse type abstractions" in {
+    val A = TClass("A", List())
+    parser.parseTy("λA.A").get should be (TTAbs("A", Right(Top), A))
+  }
+  "parseTy" should "parse type abstractions with extends clauses" in {
+    val A = TClass("A", List())
+    val C = TClass("C", List())
+    parser.parseTy("λA. λB extends A.C").get should be (TTAbs("A", Right(Top), TTAbs("B", Right(A), C)))
+  }
+  "parseTy" should "parse type abstractions with kind annotations" in {
+    val A = TClass("A", List())
+    val C = TClass("C", List())
+    parser.parseTy("λA:*.C").get should be (TTAbs("A", Left(Star), C))
+  }
+  "parseTy" should "parse kind abstractions" in {
+    val A = TClass("A", List())
+    val C = TClass("C", List())
+    parser.parseTy("ΛK. λA:K.C").get should be (TKAbs("K", TTAbs("A", Left(KVar("K")), C)))
+  }
 
 }
