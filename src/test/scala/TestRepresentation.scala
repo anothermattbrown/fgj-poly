@@ -1,4 +1,4 @@
-import FGJPoly._
+import FGJU.{Representation, Typechecker, parser}
 import org.scalatest._
 
 class TestRepresentation extends FlatSpec with Matchers {

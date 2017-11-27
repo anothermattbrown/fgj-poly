@@ -1,6 +1,6 @@
-import FGJPoly._
 import org.scalatest._
-import Conversions._
+import FGJU.Conversions._
+import FGJU._
 
 class TestParser extends FlatSpec with Matchers {
   "parseVarDecl" should "parse var declarations" in {

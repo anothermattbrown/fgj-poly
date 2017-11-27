@@ -1,6 +1,6 @@
-package FGJPoly {
+package FGJU
 
-  object Representation {
+object Representation {
     val SupertypeOfSrc =
       """class SupertypeOf<A,B extends A> {
         |  A upcast(B b) { return b; }
@@ -168,4 +168,3 @@ package FGJPoly {
     cast(Expr<This,Env,Obj<Fields,Methods,T>> e);
 
    */
-}
