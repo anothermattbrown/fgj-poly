@@ -76,27 +76,44 @@ object parser extends RegexParsers with PackratParsers {
       case nm ~ gvds ~ parent ~ (fields ~ methods) => ClassDecl(gvds, nm, parent.getOrElse(Top), fields, methods)
     }
 
-  def extendsClause = "extends" ~> ty | success(Top)
+  def extendsClause : Parser[Type] = "extends" ~> ty | success(Top)
 
   def fieldDecls: Parser[Map[String, Type]] = rep(fieldDecl <~ ";") ^^ { ds => Map() ++ ds }
 
   def fieldDecl: Parser[(String, Type)] = ty ~ identStr ^^ { case ty ~ nm => (nm, ty) }
 
-  def methodDecls = rep(methodDecl)
+  def methodDecls : Parser[List[MethodDecl]] = rep(methodDecl)
 
   def gActuals: Parser[List[Either[Kind, Type]]] = angles(repsep(gActual, ",")) | success(List())
 
   def gActual: Parser[Either[Kind, Type]] = "+" ~> kind ^^ (Left(_)) | ty ^^ (Right(_))
 
-  def ty: Parser[Type] = tyTop | tyForallK | tyForallTy | tyLambdaTy | tyLambdaK | tyClass
+  def ty: Parser[Type] = tyAtom ~ tyApps ^^ {
+    case ty ~ apps => apps.foldLeft(ty)({
+      case (t,Left(k)) => TKApp(t,k)
+      case (t1,Right(t2)) => TTApp(t1,t2)
+    })
+  }
+
+  def tyAtom : Parser[Type] = log(tyTop | tyVar | tyForallK | tyForallTy | tyAnglesForallK | tyAnglesForallTy |
+                                  tyLambdaTy | tyLambdaK | parens(ty))("tyAtom")
+
+  def tyApps : Parser[List[Either[Kind,Type]]] = rep(angles(repsep(gActual,","))) ^^ (_.flatten)
 
   def tyTop: Parser[Type] = "Top" ^^ { _ => Top }
 
-  def tyClass: Parser[Type] = ident ~ gActuals ^^ { case nm ~ actuals => TClass(nm, actuals) }
+  def tyVar: Parser[Type] = ident ^^ TVar
 
-  def tyForallTy: Parser[Type] = forall ~> ident ~ kindAnnotationOrExtendsClause ~ ("." ~> ty) ^^ {
-    case nm ~ kindOrSuper ~ ty => TForallTy(nm, kindOrSuper, ty)
-  }
+  def tyForallTy: Parser[Type] =
+    forall ~> ident ~ kindAnnotationOrExtendsClause ~ ("." ~> ty) ^^ {
+      case nm ~ kindOrSuper ~ ty => TForallTy(nm, kindOrSuper, ty)
+    }
+
+  def tyAnglesForallTy : Parser[Type] =
+    angles(ident ~ kindAnnotationOrExtendsClause) ~ ty ^^ {case nm ~ kindOrSuper ~ bdy => TForallTy(nm,kindOrSuper,bdy)}
+
+  def tyAnglesForallK : Parser[Type] =
+    angles("+" ~> ident) ~ ty ^^ {case nm~bdy => TForallK(nm,bdy)}
 
   def tyLambdaTy: Parser[Type] = lambda ~> ident ~ kindAnnotationOrExtendsClause ~ ("." ~> ty) ^^ {
     case nm ~ kindOrSuper ~ ty => TTAbs(nm, kindOrSuper, ty)

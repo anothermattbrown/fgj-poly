@@ -17,11 +17,12 @@ object uniqueId {
 object Conversions {
   implicit def stringToIdent(nm: String) = Ident(nm, 0)
   implicit def stringMapToIdentMap[A](m : Map[String,A]) : Map[Ident,A] = m.map({case (k,v) => (stringToIdent(k),v)})
-  implicit def stringToType(nm:String) = TClass(nm,List())
+  implicit def stringToType(nm:String) = TVar(nm)
 }
 
 sealed trait Type
 case object Top extends Type
+case class TVar(nm:Ident) extends Type
 case class TClass(nm: Ident, params: List[Either[Kind,Type]]) extends Type
 // quantification of base types (kind *) has an upper bound.
 // quantification of type constructors (kind k1 -> k2) does not have an upper bound.

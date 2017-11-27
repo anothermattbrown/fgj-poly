@@ -1,14 +1,17 @@
 import FGJU.{Representation, Typechecker, parser}
 import org.scalatest._
+import FGJU.Conversions._
 
 class TestRepresentation extends FlatSpec with Matchers {
   "SupertypeOf" should "typecheck" in {
     val supertypeOf = parser.parseClassDecl(Representation.SupertypeOfSrc).get
-    new Typechecker().addClassDecl(supertypeOf)
+    new Typechecker().addClassDecl(supertypeOf).tcClassDecl("SupertypeOf")
+
   }
   "TypeApp" should "typecheck" in {
-    val supertypeOf = parser.parseClassDecl(Representation.TypeAppSrc).get
-    new Typechecker().addClassDecl(supertypeOf)
+    print(parser.parseClassDecl(Representation.TypeAppSrc))
+    val cd = parser.parseClassDecl(Representation.TypeAppSrc).get
+    new Typechecker().addClassDecl(cd).tcClassDecl("TypeApp")
   }
 
   val srcs = List(

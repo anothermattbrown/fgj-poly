@@ -16,7 +16,7 @@ object Representation {
     // Polymorphic type-application function (as in Brown-Palsberg POPL'15)
     val TypeAppSrc =
       """class TypeApp<+X,T:X -> *> {
-        |  <A:X> apply(<A:X> T<A> e) { return e<A>; }
+        |  <A:X> T<A> apply(<A:X> T<A> e) { return e<A>; }
         |}
       """.stripMargin
 
