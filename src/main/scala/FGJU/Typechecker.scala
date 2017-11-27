@@ -13,8 +13,11 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case KForall(nm, k) => addKindVar(nm).assertKindIsWellFormed(k)
   }
 
+  /*
   def assertTypeIsWellFormed(ty: Type): Unit = ty match {
     case Top => ()
+    case TVar(nm) if tEnv contains nm => return
+    case TVar(nm)
     case TClass(nm, List()) => {
       if (tEnv.contains(nm))
         return
@@ -39,6 +42,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     }
     case TForallTy(nm, kindOrBound, ty) => addTypeVar(nm, kindOrBound).assertTypeIsWellFormed(ty)
   }
+  */
 
   def addTypeVar(nm: Ident, kindOrBound: Either[Kind, Type]): Typechecker = {
     kindOrBound match {
@@ -77,13 +81,31 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     }
   }
 
+  def foldTypeApps(nm:Ident, params : List[Either[Kind,Type]]) =
+    params.foldLeft[Type](TVar(nm))({
+      case (t1,Left(k)) => TKApp(t1,k)
+      case (t1,Right(p)) => TTApp(t1,p)
+    })
+
+  def unfoldTypeApps(t:Type) : (Ident,List[Either[Kind,Type]]) = t match {
+    case TVar(nm) => (nm,List())
+    case TTApp(t1,param) =>
+      val (nm,params) = unfoldTypeApps(t1)
+      (nm,params ++ List(Right(param)))
+    case TKApp(t1,param) =>
+      val (nm,params) = unfoldTypeApps(t1)
+      (nm,params ++ List(Left(param)))
+  }
+
   def getParentType(t: Type): Type = t match {
-    case Top => throw new Exception("Top has no parent type")
-    case TClass(nm, params) =>
+    case Top                => throw new Exception("Top has no parent type")
+    case TForallTy(_, _, _) => throw new Exception("Forall types have no parent types")
+    case TForallK(_,_)      => throw new Exception("Forall types have no parent types")
+    case _ =>
+      val (nm,params) = unfoldTypeApps(t)
       val classDecl = cEnv.getOrElse(nm, throw new Exception("undeclared class " + nm))
       val (kSubst, tSubst) = instantiateGVars(classDecl.params, params)
       substTy(kSubst, tSubst, classDecl.superClass)
-    case TForallTy(_, _, _) => throw new Exception("Forall types have no parent types")
   }
 
   def substKind(kSubst: Map[Ident, Kind], k: Kind): Kind = k match {
@@ -96,7 +118,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
   }
 
   def normalizeTy(t: Type, tSubst: Map[Ident, Type] = Map(), kSubst: Map[Ident, Kind] = Map()): Type = t match {
-    case TClass(nm, List()) => tSubst getOrElse(nm, t)
+    case TVar(nm) => tSubst getOrElse(nm, t)
     case TTApp(t1, t2) => normalizeTy(t1, tSubst, kSubst) match {
       case TTAbs(nm, _, bdy) =>
         val t2nf = normalizeTy(t2, tSubst, kSubst)
@@ -111,14 +133,14 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         case Left(k) => Left(substKind(kSubst, k))
         case Right(t) => Right(normalizeTy(t, tSubst, kSubst))
       }
-      TTAbs(nm1, kindOrBound, normalizeTy(bdy, tSubst + (nm -> TClass(nm1, List())), kSubst))
+      TTAbs(nm1, kindOrBound, normalizeTy(bdy, tSubst + (nm -> TVar(nm1)), kSubst))
     case TForallTy(nm, kindOrBound, bdy) =>
       val nm1 = freshen(nm)
       val kindOrBound1 = kindOrBound match {
         case Left(k) => Left(substKind(kSubst, k))
         case Right(t) => Right(normalizeTy(t, tSubst, kSubst))
       }
-      TForallTy(nm1, kindOrBound, normalizeTy(bdy, tSubst + (nm -> TClass(nm1, List())), kSubst))
+      TForallTy(nm1, kindOrBound, normalizeTy(bdy, tSubst + (nm -> TVar(nm1)), kSubst))
     case TKAbs(nm, bdy) =>
       val nm1 = freshen(nm)
       TKAbs(nm1, normalizeTy(bdy, tSubst, kSubst + (nm -> KVar(nm1))))
@@ -131,13 +153,13 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     // precondition: sub and sup are both valid types
     if (sub == sup) return
     sub match {
-      case TClass(nm, List()) if tEnv contains (nm) =>
+      case TVar(nm) if tEnv contains (nm) =>
         val kindOrBound: Either[Kind, Type] = tEnv(nm)
         val parent: Type = kindOrBound.getOrElse(throw new Exception("assertSubtypeOf: type variable is not kind *"))
         assertIsSubtypeOf(parent, sup)
-      case TClass(nm, params) => assertIsSubtypeOf(getParentType(sub), sup)
       case TForallTy(_, _, _) => throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
       case TForallK(_, _) => throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
+      case _ => assertIsSubtypeOf(getParentType(sub), sup)
     }
   }
 
@@ -165,7 +187,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         assertKindIsWellFormed(k)
         addTypeVar(d.nm, Left(k))
       case GAType(Right(upperBound)) =>
-        assertTypeIsWellFormed(upperBound)
+        assert(tcType(upperBound) == Star)
         addTypeVar(d.nm, Right(upperBound))
     }
 
@@ -174,24 +196,37 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
   }
 
   def addVarDecls(decls: List[VarDecl]): Typechecker = {
-    decls.foreach(d => assertTypeIsWellFormed(d.ty))
+    decls.foreach(d => assert(tcType(d.ty) == Star))
     new Typechecker(cEnv, kEnv, tEnv, env ++ decls.map(d => d.nm -> d.ty), thisType)
   }
 
   def setThisType(ty: Type): Typechecker = new Typechecker(cEnv, kEnv, tEnv, env, Some(ty))
 
+  def classKind(d : ClassDecl) : Kind =
+    d.params.foldRight[Kind](Star)({
+      case (GVarDecl(nm,GAKind),k) => KForall(nm,k)
+      case (GVarDecl(_,GAType(Left(k1))),k2) => KArr(k1,k2)
+      case (GVarDecl(_,GAType(Right(_))),k) => KArr(Star,k)
+    })
+
+  // Does kind-checking, but doesn't check subtype constraints on type parameters
   def tcType(t: Type): Kind = t match {
     case Top => Star
-
-    case TClass(nm, List()) if tEnv contains nm => tEnv(nm) match {
+    case TVar(nm) if tEnv contains nm => tEnv(nm) match {
       case Left(k) => k
       case Right(sup) => Star
     }
-
-    case TClass(nm, _) if cEnv contains nm => Star
-
-    case TClass(_, _) => throw new Exception("tcType: undeclared type " + t)
-
+    case TVar(nm) if cEnv contains nm => classKind(cEnv(nm))
+    case TVar(nm) => throw new Exception("tcType: undeclared type " + nm)
+    case TTApp(t1,t2) => (tcType(t1), tcType(t2)) match {
+      case (KArr(a1,r),a2) if a1 == a2 => r
+      case (k1,k2) => throw new Exception("tcType TTApp error: k1=" + k1 + ", k2=" + k2)
+    }
+    case TKApp(t1,k) =>
+      assertKindIsWellFormed(k)
+      tcType(t1) match {
+        case KForall(nm,bdy) => substKind(Map(nm -> k),bdy)
+      }
     case TForallTy(nm, kindOrBound, bdy) =>
       assert(addTypeVar(nm, kindOrBound).tcType(bdy) == Star, "Forall type body failed to kind-check")
       Star
@@ -234,9 +269,9 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
 
     assert(tcOuter.tcType(c.superClass) == Star, "tcClassDecl: superClass must have kind *")
 
-    val tcInner = tcOuter.setThisType(TClass(c.nm, c.params.map({
+    val tcInner = tcOuter.setThisType(foldTypeApps(c.nm, c.params.map({
       case GVarDecl(nm, GAKind) => Left(KVar(nm))
-      case GVarDecl(nm, GAType(_)) => Right(TClass(nm, List()))
+      case GVarDecl(nm, GAType(_)) => Right(TVar(nm))
     })))
 
     c.fields.foreach({ case (nm, ty) =>
@@ -249,9 +284,23 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
   def tcMethod(m: MethodDecl): Unit = {
     // add type parameters to the context. this checks bounds are well-formed
     val tc1 = addTVarDecls(m.tParams)
-    tc1.assertTypeIsWellFormed(m.retTy)
+    try {
+      val retTyKind : Kind = tc1.tcType(m.retTy)
+      if(retTyKind != Star)
+        throw new Exception("tcMethod: return type " + m.retTy + " does not have kind *: " + retTyKind)
+    } catch {
+      case e : Exception =>
+        throw new Exception("tcMethod: return type " + m.retTy + " failed to type-check\n" + e)
+    }
     val tc2 = tc1.addVarDecls(m.params)
-    tc2.tcExpr(m.bdy)
+    try {
+      val bdyTy: Type = tc2.tcExpr(m.bdy)
+      if (bdyTy != m.retTy)
+        throw new Exception("tcMethod: method body does not have expected type: " + m.retTy)
+    } catch {
+      case e : Exception =>
+
+    }
   }
 
   def either[A1, A2, B1, B2](f: A1 => A2, g: B1 => B2): Either[A1, B1] => Either[A2, B2] = {
@@ -261,8 +310,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
 
   def substTy(kSubst: Map[Ident, Kind], tSubst: Map[Ident, Type], ty: Type): Type = ty match {
     case Top => Top
-    case TClass(nm, List()) => tSubst getOrElse(nm, ty) // type variable cannot have params
-    case TClass(nm, params) => TClass(nm, params map either(substKind(kSubst, _), substTy(kSubst, tSubst, _)))
+    case TVar(nm) => tSubst getOrElse(nm, ty) // type variable cannot have params
     case TForallTy(nm, kindOrBound, bdy) =>
       val kindOrBound1: Either[Kind, Type] = kindOrBound match {
         case Left(k) => Left(substKind(kSubst, k))
@@ -277,32 +325,34 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       }
       TTAbs(nm, kindOrBound1, substTy(kSubst, tSubst - nm, bdy))
     case TKAbs(nm, bdy) => TKAbs(nm, substTy(kSubst - nm, tSubst, bdy))
+    case TTApp(t1,t2) => TTApp(substTy(kSubst,tSubst,t1), substTy(kSubst,tSubst,t2))
+    case TKApp(t,k) => TKApp(substTy(kSubst,tSubst,t), substKind(kSubst,k))
   }
 
-  def lookupFieldType(ty: Type, nm: String): Type = {
+  def lookupFieldType(ty: Type, fNm: String): Type = {
     // Don't support field access on quantified types.
-    val ty1: TClass = ty.asInstanceOf[TClass]
-    val classDecl = cEnv(ty1.nm)
+    val (nm,params) = unfoldTypeApps(ty)
+    val classDecl = cEnv(nm)
 
-    if (classDecl.params.length != ty1.params.length)
+    if (classDecl.params.length != params.length)
       throw new Exception("lookupFieldType: wrong number of class type parameters")
 
-    val (kSubst, tSubst) = instantiateGVars(classDecl.params, ty1.params)
-    val fieldTy = classDecl.fields(nm)
+    val (kSubst, tSubst) = instantiateGVars(classDecl.params, params)
+    val fieldTy = classDecl.fields(fNm)
     substTy(kSubst, tSubst, fieldTy)
   }
 
   case class MethodSig(tParams: List[GVarDecl], retTy: Type, paramTypes: List[Type])
 
-  def lookupMethodSig(ty: Type, nm: String): MethodSig = {
+  def lookupMethodSig(ty: Type, mNm: String): MethodSig = {
     // Don't support field access on quantified types.
-    val ty1: TClass = ty.asInstanceOf[TClass]
-    val classDecl = cEnv(ty1.nm)
+    val (nm,params) = unfoldTypeApps(ty)
+    val classDecl = cEnv(nm)
 
-    if (classDecl.params.length != ty1.params.length)
+    if (classDecl.params.length != params.length)
       throw new Exception("lookupFieldType: wrong number of class type parameters")
-    val (kSubst, tSubst) = instantiateGVars(classDecl.params, ty1.params)
-    val md = classDecl.methods.filter(m => m.nm == nm).head
+    val (kSubst, tSubst) = instantiateGVars(classDecl.params, params)
+    val md = classDecl.methods.filter(m => m.nm == mNm).head
     val sig = MethodSig(md.tParams, md.retTy, md.params.map(_.ty))
     substMethodSig(kSubst, tSubst, sig)
   }

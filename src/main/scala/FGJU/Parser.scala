@@ -95,8 +95,8 @@ object parser extends RegexParsers with PackratParsers {
     })
   }
 
-  def tyAtom : Parser[Type] = log(tyTop | tyVar | tyForallK | tyForallTy | tyAnglesForallK | tyAnglesForallTy |
-                                  tyLambdaTy | tyLambdaK | parens(ty))("tyAtom")
+  def tyAtom : Parser[Type] = tyTop | tyVar | tyForallK | tyForallTy | tyAnglesForallK | tyAnglesForallTy |
+                              tyLambdaTy | tyLambdaK | parens(ty)
 
   def tyApps : Parser[List[Either[Kind,Type]]] = rep(angles(repsep(gActual,","))) ^^ (_.flatten)
 

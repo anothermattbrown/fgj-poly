@@ -23,7 +23,7 @@ object Conversions {
 sealed trait Type
 case object Top extends Type
 case class TVar(nm:Ident) extends Type
-case class TClass(nm: Ident, params: List[Either[Kind,Type]]) extends Type
+//case class TClass(nm: Ident, params: List[Either[Kind,Type]]) extends Type
 // quantification of base types (kind *) has an upper bound.
 // quantification of type constructors (kind k1 -> k2) does not have an upper bound.
 case class TForallTy(nm : Ident, kindOrBound:Either[Kind,Type], bdy: Type) extends Type

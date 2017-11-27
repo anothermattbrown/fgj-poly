@@ -20,6 +20,12 @@ object Representation {
         |}
       """.stripMargin
 
+    val KindAppSrc =
+      """class KindApp<T:<X>*> {
+        |  <+X> T<+X> apply(<+Y> T<+Y> e) { return e<+X>; }
+        |}
+      """.stripMargin
+
     /*
     val StrippedVisitorSrc =
       """class StrippedVisitor<This,Env,Ret> {
