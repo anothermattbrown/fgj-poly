@@ -2,7 +2,7 @@ package FGJPoly {
 
   object Representation {
     val SupertypeOfSrc =
-      """class SupertypeOf<A,B ~> A> {
+      """class SupertypeOf<A,B extends A> {
         |  A upcast(B b) { return b; }
         |}
       """.stripMargin
@@ -12,6 +12,14 @@ package FGJPoly {
         |  <Ret> Ret accept(ExprVisitor<This,Env,T,Ret> v) { return this.<Ret>accept(v); }
         |}
       """.stripMargin
+
+    // Polymorphic type-application function (as in Brown-Palsberg POPL'15)
+    val TypeAppSrc =
+      """class TypeApp<+X,T:X -> *> {
+        |  <A:X> apply(<A:X> T<A> e) { return e<A>; }
+        |}
+      """.stripMargin
+
     /*
     val StrippedVisitorSrc =
       """class StrippedVisitor<This,Env,Ret> {
@@ -38,6 +46,7 @@ package FGJPoly {
         |  R apply(A a) { return this.apply(a); }
         |}
       """.stripMargin
+
     val StripSrc =
       """class Poly<P,PExp,This,Env> {
         |  <Ret> Ret strip(Q q, [T] Fun<Expr<This,Env,T>, Ret> f) { return this.<Ret>strip(q,f); }

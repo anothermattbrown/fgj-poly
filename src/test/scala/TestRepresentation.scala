@@ -6,6 +6,10 @@ class TestRepresentation extends FlatSpec with Matchers {
     val supertypeOf = parser.parseClassDecl(Representation.SupertypeOfSrc).get
     new Typechecker().addClassDecl(supertypeOf)
   }
+  "TypeApp" should "typecheck" in {
+    val supertypeOf = parser.parseClassDecl(Representation.TypeAppSrc).get
+    new Typechecker().addClassDecl(supertypeOf)
+  }
 
   val srcs = List(
     Representation.SupertypeOfSrc,

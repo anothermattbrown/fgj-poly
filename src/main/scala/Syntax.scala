@@ -17,11 +17,12 @@ package FGJPoly {
   object Conversions {
     implicit def stringToIdent(nm: String) = Ident(nm, 0)
     implicit def stringMapToIdentMap[A](m : Map[String,A]) : Map[Ident,A] = m.map({case (k,v) => (stringToIdent(k),v)})
+    implicit def stringToType(nm:String) = TClass(nm,List())
   }
 
   sealed trait Type
   case object Top extends Type
-  case class TClass(nm: Ident, params: List[Type]) extends Type
+  case class TClass(nm: Ident, params: List[Either[Kind,Type]]) extends Type
   // quantification of base types (kind *) has an upper bound.
   // quantification of type constructors (kind k1 -> k2) does not have an upper bound.
   case class TForallTy(nm : Ident, kindOrBound:Either[Kind,Type], bdy: Type) extends Type
@@ -41,23 +42,27 @@ package FGJPoly {
   case object This extends Expr
   case class Var(nm: Ident) extends Expr
   case class Field(e: Expr, nm: String) extends Expr
-  case class Call(e: Expr, tParams: List[Type], nm: String, params: List[Expr]) extends Expr
+  case class Call(e: Expr, gParams: List[Either[Kind,Type]], nm: String, params: List[Expr]) extends Expr
   case class TAbs(nm : Ident, kindOrBound:Either[Kind,Type], e : Expr) extends Expr
   case class KAbs(nm : Ident, e : Expr) extends Expr
   case class TApp(e:Expr, t : Type) extends Expr
   case class KApp(e:Expr, k : Kind) extends Expr
 
-  case class ClassDecl(params: List[TVarDecl],
+  case class ClassDecl(params: List[GVarDecl],
                        nm: Ident,
                        superClass: Type,
-                       fields: List[VarDecl],
+                       fields: Map[String,Type],
                        methods: List[MethodDecl])
 
   case class VarDecl(nm: Ident, ty: Type)
 
-  case class TVarDecl(nm: Ident, kindOrBound : Either[Kind,Type])
+  case class GVarDecl(nm: Ident, ann : GenericAnnotation)
 
-  case class MethodDecl(tParams: List[TVarDecl], retTy: Type, nm: String, params: List[VarDecl], bdy: Expr)
+  sealed trait GenericAnnotation
+  object GAKind extends GenericAnnotation
+  case class GAType(kindOrBound : Either[Kind,Type]) extends GenericAnnotation
+
+  case class MethodDecl(tParams: List[GVarDecl], retTy: Type, nm: String, params: List[VarDecl], bdy: Expr)
 
   class Program(classDecls: List[ClassDecl], expr: Expr)
 

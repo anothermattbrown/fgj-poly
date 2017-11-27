@@ -1,6 +1,6 @@
 import FGJPoly._
 import org.scalatest._
-import Conversions.stringToIdent
+import Conversions._
 
 class TestParser extends FlatSpec with Matchers {
   "parseVarDecl" should "parse var declarations" in {
@@ -29,42 +29,46 @@ class TestParser extends FlatSpec with Matchers {
   }
   "parseExpr" should "parse method calls with type parameters" in {
     parser.parseExpr("foo.<X,Y>bar()").get should be (
-      Call(Var("foo"), List(TClass("X", List()), TClass("Y", List())), "bar", List())
+      Call(Var("foo"), List(Right(TClass("X", List())), Right(TClass("Y", List()))), "bar", List())
     )
   }
   "parseExpr" should "parse type abstractions" in {
-    parser.parseExpr("ΛX.x").get should be(TAbs("X",Right(Top),Var("x")))
+    parser.parseExpr("<X> x").get should be(TAbs("X",Right(Top),Var("x")))
   }
   "parseExpr" should "parse type abstractions with extends clauses" in {
-    parser.parseExpr("ΛX extends Y.x").get should be(TAbs("X",Right(TClass("Y",List())),Var("x")))
+    parser.parseExpr("<X extends Y> x").get should be(TAbs("X",Right(TClass("Y",List())),Var("x")))
   }
   "parseExpr" should "parse type abstractions with kind annotations" in {
-    parser.parseExpr("ΛX:* -> *.x").get should be(TAbs("X",Left(KArr(Star,Star)),Var("x")))
+    parser.parseExpr("<X:* -> *> x").get should be(TAbs("X",Left(KArr(Star,Star)),Var("x")))
   }
   "parseExpr" should "parse type applications" in {
     parser.parseExpr("x<Top>").get should be(TApp(Var("x"), Top))
   }
   "parseExpr" should "parse kind abstractions" in {
-    parser.parseExpr("Λ+X.x").get should be(KAbs("X",Var("x")))
+    parser.parseExpr("<+X>x").get should be(KAbs("X",Var("x")))
   }
   "parseExpr" should "parse kind applications" in {
-    parser.parseExpr("x+<*>").get should be(KApp(Var("x"),Star))
+    parser.parseExpr("x<+ *>").get should be(KApp(Var("x"),Star))
   }
 
   "parseMethodDecl" should "parse method declarations" in {
     val A = TClass("A", List())
     val decl_a = VarDecl("a", A)
-    val m = MethodDecl(List(TVarDecl("A", Right(Top)), TVarDecl("A", Right(A))),
+    val m = MethodDecl(List(GVarDecl("A", GAType(Right(Top))), GVarDecl("A", GAType(Right(A)))),
       A, "m", List(decl_a,decl_a), Var("x"))
     parser.parseMethodDecl("<A,A extends A> A m(A a, A a){return x;}").get should be (m)
   }
 
-  "parseClassDecl" should "parse class declarations" in {
+  "parseClassDecl" should "parse class declarations with fields" in {
+    parser.parseClassDecl("class A { B b; }").get should be(ClassDecl(List(), "A", Top, Map("b" -> "B"), List()))
+  }
+  "parseClassDecl" should "parse generic class declarations" in {
     val A = TClass("A", List())
     val decl_a = VarDecl("a", A)
-    val m = MethodDecl(List(TVarDecl("A", Right(Top)), TVarDecl("A", Right(A))),
+    val m = MethodDecl(
+      List(GVarDecl("A", GAType(Right(Top))), GVarDecl("A", GAType(Right(A)))),
       A, "m", List(decl_a,decl_a), Var("x"))
-    val c = ClassDecl(List(TVarDecl("T",Right(Top))), "Foo", A, List(), List(m))
+    val c = ClassDecl(List(GVarDecl("T",GAType(Right(Top)))), "Foo", A, Map(), List(m))
     parser.parseClassDecl("class Foo<T> extends A { <A,A extends A> A m(A a, A a){return x;} }").get should be (c)
   }
 
@@ -80,8 +84,11 @@ class TestParser extends FlatSpec with Matchers {
   "parseKind" should "parse parenthesized kinds" in {
     parser.parseKind("(A -> B) -> C").get should be (KArr(KArr(KVar("A"),KVar("B")), KVar("C")))
   }
-  "parseKind" should "parse quantified kinds" in {
+  "parseKind" should "parse quantified kinds using forall syntax" in {
     parser.parseKind("∀X.X -> *").get should be (KForall("X",KArr(KVar("X"),Star)))
+  }
+  "parseKind" should "parse quantified kinds using angle-bracket syntax" in {
+    parser.parseKind("<X> X -> *").get should be (KForall("X",KArr(KVar("X"),Star)))
   }
 
 
