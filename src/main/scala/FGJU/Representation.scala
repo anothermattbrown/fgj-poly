@@ -40,20 +40,6 @@ object Representation {
         |}
       """.stripMargin
 
-    val StripSrc =
-      """class Poly<P,PExp,This,Env> {
-        |  <Ret> Ret strip(Q q, [T] Fun<Expr<This,Env,T>, Ret> f) { return this.<Ret>strip(q,f); }
-        |  P under(Q q, [T] Fun<Expr<This,Env,T>, T> f) { return this.under(q,f); }
-        |}
-      """.stripMargin
-    val SomeStripSrc =
-      """class SomePoly<This,Env,T,P ~> T,PExp ~> Expr<This,Env,T>> extends Poly<P,PExp,This,Env> {
-        |  <Ret> Ret strip(PExp q, [T] Fun<Expr<This,Env,T>, Ret> f) {
-        |    return ((Fun<Expr<This,Env,T>, Ret>)f).apply((Expr<This,Env,T>)q);
-        |  }
-        |}
-      """.stripMargin
-
     val IndexSrc =
       """class Index<Env,T> {
         |}
@@ -68,14 +54,6 @@ object Representation {
       """class ExprVisitor<This,Env,T,Ret> {
         |  Ret var(Index<Env,T> idx) { return this.var(idx); }
         |  Ret _this(Eq<T,This> eq) { return this._this(eq); }
-        |  <TStripped,ExpT ~> Exp<This,Env,TStripped>>
-        |    Ret
-        |    typeAbs(ExpT e) { return this.<TStripped,ExpT>typeAbs(e); }
-        |  <Q ~> T>
-        |    Ret
-        |    typeInst(Expr<This,Env,Q> e) {
-        |      return this.<Q>typeInst(e);
-        |    }
         |}
       """.stripMargin
 

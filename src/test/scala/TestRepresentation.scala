@@ -1,15 +1,16 @@
 import FGJU._
 import org.scalatest._
 import FGJU.Conversions._
+import Representation._
 
 class TestRepresentation extends FlatSpec with Matchers {
   "SupertypeOf" should "typecheck" in {
-    val supertypeOf = parser.parseClassDecl(Representation.SupertypeOfSrc)
+    val supertypeOf = parser.parseClassDecl(SupertypeOfSrc)
     new Typechecker().addClassDecl(supertypeOf).tcClassDecl("SupertypeOf")
 
   }
   "TypeApp" should "typecheck" in {
-    val cd = parser.parseClassDecl(Representation.TypeAppSrc)
+    val cd = parser.parseClassDecl(TypeAppSrc)
     new Typechecker().addClassDecl(cd).tcClassDecl("TypeApp")
   }
   "TypeApp" should "do instantiations" in {
@@ -22,45 +23,52 @@ class TestRepresentation extends FlatSpec with Matchers {
         | }
         |}
       """.stripMargin
-    val cds = List(Representation.TypeAppSrc, ASrc, BSrc, TestSrc).map(parser.parseClassDecl)
+    val cds = List(TypeAppSrc, ASrc, BSrc, TestSrc).map(parser.parseClassDecl)
     val tc = new Typechecker().addClassDecls(cds)
     List[Ident]("A","B","Test").foreach(tc.tcClassDecl)
   }
 
   "UnderTAbs" should "typecheck" in {
-    val fun = parser.parseClassDecl(Representation.FunSrc)
-    val cd = parser.parseClassDecl(Representation.UnderTAbsSrc)
+    val fun = parser.parseClassDecl(FunSrc)
+    val cd = parser.parseClassDecl(UnderTAbsSrc)
     new Typechecker().addClassDecls(List(fun,cd)).tcClassDecl("UnderTAbs")
   }
   "KindApp" should "typecheck" in {
-    val cd = parser.parseClassDecl(Representation.KindAppSrc)
+    val cd = parser.parseClassDecl(KindAppSrc)
     new Typechecker().addClassDecl(cd).tcClassDecl("KindApp")
   }
 
   val srcs = List(
-    Representation.SupertypeOfSrc,
-    /*
-    Representation.StrippedVisitorSrc,
-    Representation.StrippedSrc,
-    Representation.SomeStrippedSrc,
-    */
-    Representation.ExprSrc,
-    Representation.ExprVisitorSrc,
-    Representation.IndexSrc,
-    Representation.EqSrc,
-    Representation.FunSrc,
-    Representation.StripSrc,
-    Representation.SomeStripSrc,
+    ("SupertypeOf", SupertypeOfSrc),
+    ("Expr",        ExprSrc),
+    ("ExprVisitor", ExprVisitorSrc),
+    ("Index",       IndexSrc),
+    ("Eq",          EqSrc),
+    ("Fun",         FunSrc),
   )
 
-  "class decls" should "parse" in {
-    val parseSrcs = srcs ++ List(
-    )
-    parseSrcs.foreach(parser.parseClassDecl(_))
+  it should "parse all classes" in {
+    srcs.foreach({case (nm,src) =>
+      try {
+        parser.parseClassDecl(src)
+      } catch {
+        case e : Exception =>
+          throw new Exception(s"error parsing $nm", e)
+      }
+    })
   }
 
-  "class decls" should "typecheck" in {
-    val decls = srcs.map(parser.parseClassDecl(_))
-    new Typechecker().addClassDecls(decls)
+  it should "typecheck all classes" in {
+    val nms = srcs.map(_._1)
+    val cds = srcs.map(p => parser.parseClassDecl(p._2))
+    val tc = new Typechecker().addClassDecls(cds)
+    nms.foreach(nm =>
+      try {
+        tc.tcClassDecl(nm)
+      } catch {
+        case e : Exception =>
+          throw new Exception(s"error typechecking $nm", e)
+      }
+    )
   }
 }
