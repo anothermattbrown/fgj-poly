@@ -27,6 +27,11 @@ class TestRepresentation extends FlatSpec with Matchers {
     List[Ident]("A","B","Test").foreach(tc.tcClassDecl)
   }
 
+  "UnderTAbs" should "typecheck" in {
+    val fun = parser.parseClassDecl(Representation.FunSrc).get
+    val cd = parser.parseClassDecl(Representation.UnderTAbsSrc).get
+    new Typechecker().addClassDecls(List(fun,cd)).tcClassDecl("UnderTAbs")
+  }
   "KindApp" should "typecheck" in {
     print(parser.parseClassDecl(Representation.KindAppSrc))
     val cd = parser.parseClassDecl(Representation.KindAppSrc).get

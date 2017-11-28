@@ -13,37 +13,6 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case KForall(nm, k) => addKindVar(nm).assertKindIsWellFormed(k)
   }
 
-  /*
-  def assertTypeIsWellFormed(ty: Type): Unit = ty match {
-    case Top => ()
-    case TVar(nm) if tEnv contains nm => return
-    case TVar(nm)
-    case TClass(nm, List()) => {
-      if (tEnv.contains(nm))
-        return
-      if (!cEnv.contains(nm))
-        throw new Exception("undeclared type " + nm)
-      if (cEnv(nm).params.nonEmpty)
-        throw new Exception("incorrect number of type parameters for type " + nm)
-    }
-    case TClass(nm, actuals) => {
-      val c: ClassDecl = cEnv getOrElse(nm, throw new Exception("unknown class " + ty))
-      val anns = c.params.map(_.ann)
-      if (anns.length != actuals.length)
-        throw new Exception("incorrect number of types parameters for type " + nm)
-      else
-        anns.zip(actuals).foreach({
-          case (GAKind, Left(k)) => assertKindIsWellFormed(k)
-          case (GAKind, Right(t)) => throw new Exception("type where kind is expected" + t)
-          case (GAType(_), Left(k)) => throw new Exception("kind where type is expected" + k)
-          case (GAType(Left(k)), Right(t)) => assert(tcType(ty) == k, "class type parameter has wrong kind")
-          case (GAType(Right(sup)), Right(sub)) => assertIsSubtypeOf(sub, sup)
-        })
-    }
-    case TForallTy(nm, kindOrBound, ty) => addTypeVar(nm, kindOrBound).assertTypeIsWellFormed(ty)
-  }
-  */
-
   def addTypeVar(nm: Ident, kindOrBound: Either[Kind, Type]): Typechecker = {
     kindOrBound match {
       case Left(k) => assertKindIsWellFormed(k)
@@ -98,6 +67,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case TKApp(t1,param) =>
       val (nm,params) = unfoldTypeApps(t1)
       (nm,params ++ List(Left(param)))
+    case _ => throw new Exception("unfoldTypeApps: cannot unfold type " + t)
   }
 
   def getParentType(t: Type): Type = t match {
@@ -106,9 +76,17 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case TForallK(_,_)      => throw new Exception("Forall types have no parent types")
     case _ =>
       val (nm,params) = unfoldTypeApps(t)
-      val classDecl = cEnv.getOrElse(nm, throw new Exception("undeclared class " + nm))
-      val (kSubst, tSubst) = instantiateGVars(classDecl.params, params)
-      substTy(kSubst, tSubst, classDecl.superClass)
+      if(cEnv contains nm) {
+        val classDecl = cEnv(nm)
+        val (kSubst, tSubst) = instantiateGVars(classDecl.params, params)
+        return substTy(kSubst, tSubst, classDecl.superClass)
+      } else if(tEnv contains nm) {
+        tEnv(nm) match {
+          case Left(k) => return Top
+          case Right(sup) => return sup
+        }
+      }
+      throw new Exception("getParentType: unknown type: " + nm)
   }
 
   def substKind(kSubst: Map[Ident, Kind], k: Kind): Kind = k match {
@@ -121,28 +99,32 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
   }
 
   def normalizeTy(t: Type, tSubst: Map[Ident, Type] = Map(), kSubst: Map[Ident, Kind] = Map()): Type = t match {
+    case Top => Top
     case TVar(nm) => tSubst getOrElse(nm, t)
-    case TTApp(t1, t2) => normalizeTy(t1, tSubst, kSubst) match {
-      case TTAbs(nm, _, bdy) =>
-        val t2nf = normalizeTy(t2, tSubst, kSubst)
-        normalizeTy(bdy, tSubst + (nm -> t2nf), kSubst)
-    }
+    case TTApp(t1, t2) =>
+      val t2nf = normalizeTy(t2, tSubst, kSubst)
+      normalizeTy(t1, tSubst, kSubst) match {
+        case TTAbs(nm, _, bdy) =>
+          normalizeTy(bdy, tSubst + (nm -> t2nf), kSubst)
+        case t1nf => TTApp(t1nf,t2nf)
+      }
     case TKApp(t, k) => normalizeTy(t, tSubst, kSubst) match {
       case TKAbs(nm, bdy) => normalizeTy(bdy, tSubst, kSubst + (nm -> k))
+      case t1 => TKApp(t1,k)
     }
     case TTAbs(nm, kindOrBound, bdy) =>
-      val nm1 = freshen(nm)
       val kindOrBound1 = kindOrBound match {
         case Left(k) => Left(substKind(kSubst, k))
         case Right(t) => Right(normalizeTy(t, tSubst, kSubst))
       }
+      val nm1 = freshen(nm)
       TTAbs(nm1, kindOrBound, normalizeTy(bdy, tSubst + (nm -> TVar(nm1)), kSubst))
     case TForallTy(nm, kindOrBound, bdy) =>
-      val nm1 = freshen(nm)
       val kindOrBound1 = kindOrBound match {
         case Left(k) => Left(substKind(kSubst, k))
         case Right(t) => Right(normalizeTy(t, tSubst, kSubst))
       }
+      val nm1 = freshen(nm)
       TForallTy(nm1, kindOrBound, normalizeTy(bdy, tSubst + (nm -> TVar(nm1)), kSubst))
     case TKAbs(nm, bdy) =>
       val nm1 = freshen(nm)
@@ -152,11 +134,46 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       TForallK(nm1, normalizeTy(bdy, tSubst, kSubst + (nm -> KVar(nm1))))
   }
 
+  def alphaEquivK(k1 : Kind, k2 : Kind, kMap : Map[Ident,Ident] = Map()) : Boolean = (k1,k2) match {
+    case (Star,Star) => true
+    case (KVar(nm1),KVar(nm2)) => kMap.getOrElse(nm1,nm1) == nm2
+    case (KArr(l1,r1),KArr(l2,r2)) => alphaEquivK(l1,l2,kMap) && alphaEquivK(r1,r2,kMap)
+    case (KForall(nm1,bdy1), KForall(nm2,bdy2)) => alphaEquivK(bdy1,bdy2,kMap + (nm1 -> nm2))
+  }
+
+  def alphaEquivKindOrBound(kb1 : Either[Kind,Type],kb2 : Either[Kind,Type],tMap : Map[Ident,Ident],kMap : Map[Ident,Ident]) : Boolean =
+    (kb1,kb2) match {
+      case (Left(Star),Right(Top)) => true
+      case (Right(Top),Left(Star)) => true
+      case (Left(k1),Left(k2)) => alphaEquivK(k1,k2,kMap)
+      case (Right(t1),Right(t2)) => alphaEquivTy(t1,t2,tMap,kMap)
+      case _ => throw new Exception("alphaEquivKindOrBound: not equivalent.\n" + kb1 + "\n" + kb2)
+    }
+
+  // precondition: normal form types
+  def alphaEquivTy(t1 : Type, t2 : Type, tMap : Map[Ident,Ident] = Map(), kMap : Map[Ident,Ident] = Map()) : Boolean = (t1,t2) match {
+    case (Top,Top) => true
+    case (TVar(nm1),TVar(nm2)) => tMap.getOrElse(nm1,nm1) == nm2
+    case (TTAbs(nm1,kindOrBound1,bdy1), TTAbs(nm2,kindOrBound2,bdy2)) =>
+      alphaEquivKindOrBound(kindOrBound1,kindOrBound2,tMap,kMap) && alphaEquivTy(bdy1,bdy2,tMap + (nm1 -> nm2), kMap)
+    case (TTApp(f1,a1),TTApp(f2,a2)) =>
+      alphaEquivTy(f1,f2,tMap,kMap) && alphaEquivTy(a1,a2,tMap,kMap)
+    case (TKAbs(nm1,bdy1),TKAbs(nm2,bdy2)) =>
+      alphaEquivTy(bdy1,bdy2,tMap,kMap + (nm1 -> nm2))
+    case (TKApp(f1,k1),TKApp(f2,k2)) =>
+      alphaEquivTy(f1,f2,tMap,kMap) && alphaEquivK(k1,k2,kMap)
+    case (TForallTy(nm1,kindOrBound1,bdy1),TForallTy(nm2,kindOrBound2,bdy2)) =>
+      alphaEquivKindOrBound(kindOrBound1,kindOrBound2,tMap,kMap) && alphaEquivTy(bdy1,bdy2,tMap + (nm1 -> nm2), kMap)
+    case (TForallK(nm1,bdy1), TForallK(nm2,bdy2)) =>
+      alphaEquivTy(bdy1,bdy2,tMap,kMap + (nm1 -> nm2))
+    case _ => false
+  }
+
   def assertIsSubtypeOf(sub: Type, sup: Type): Unit = {
     // precondition: sub and sup are both valid types
-    if (sub == sup) return
+    if (alphaEquivTy(sub, sup)) return ()
     sub match {
-      case TVar(nm) if tEnv contains (nm) =>
+      case TVar(nm) if tEnv contains nm =>
         val kindOrBound: Either[Kind, Type] = tEnv(nm)
         val parent: Type = kindOrBound.getOrElse(throw new Exception("assertSubtypeOf: type variable is not kind *"))
         assertIsSubtypeOf(parent, sup)
@@ -171,7 +188,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
   def addClassDecls(ds: List[ClassDecl]): Typechecker = {
     // check classes weren't already declared.
     ds.foreach(d => {
-      if (cEnv contains (d.nm))
+      if (cEnv contains d.nm)
         throw new Exception("class " + d.nm + " already declared")
     })
 
@@ -221,10 +238,19 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     }
     case TVar(nm) if cEnv contains nm => classKind(cEnv(nm))
     case TVar(nm) => throw new Exception("tcType: undeclared type " + nm)
+    case TTAbs(nm,kindOrBound,bdy) =>
+      // TODO: either remove bounds on type abstractions, or somehow add bounds to the kind language
+      val k1 = kindOrBound match {
+        case Left(k) => k
+        case Right(t) => Star
+      }
+      val k2 = addTypeVar(nm,kindOrBound).tcType(bdy)
+      KArr(k1,k2)
     case TTApp(t1,t2) => (tcType(t1), tcType(t2)) match {
       case (KArr(a1,r),a2) if a1 == a2 => r
       case (k1,k2) => throw new Exception("tcType TTApp error: k1=" + k1 + ", k2=" + k2)
     }
+    case TKAbs(nm,bdy) => KForall(nm, addKindVar(nm).tcType(bdy))
     case TKApp(t1,k) =>
       assertKindIsWellFormed(k)
       tcType(t1) match {
@@ -236,6 +262,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case TForallK(nm, bdy) =>
       assert(addKindVar(nm).tcType(bdy) == Star, "Forall kind body failed to kind-check")
       Star
+    case _ => throw new Exception("tcType: no case for " + t)
   }
 
   def tcExpr(e: Expr): Type = e match {
@@ -267,10 +294,36 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       // check we have the right number of parameters
       assert(actuals.length == m.paramTypes.length)
       var expectedTypes = m.paramTypes.map(substTy(kSubst, tSubst, _))
-      var actualTypes = actuals.map(tcExpr(_))
-      actualTypes.zip(expectedTypes).foreach { case (sub, sup) => assertIsSubtypeOf(sub, sup) }
+      var actualTypes = actuals.map(tcExpr)
+      actualTypes.map(normalizeTy(_)).zip(expectedTypes.map(normalizeTy(_))).foreach {
+        case (sub, sup) => assertIsSubtypeOf(sub, sup)
+      }
 
       substTy(kSubst, tSubst, m.retTy)
+    case TAbs(nm,kindOrBound,bdy) =>
+      kindOrBound match {
+        case Left(k) => assertKindIsWellFormed(k)
+        case Right(t) => assert(tcType(t) == Star)
+      }
+      TForallTy(nm,kindOrBound,addTypeVar(nm,kindOrBound).tcExpr(bdy))
+    case TApp(e1,t) =>
+      tcExpr(e1) match {
+        case TForallTy(nm,kindOrBound,bdy) =>
+          kindOrBound match {
+            case Left(k) => assert(tcType(t) == k)
+            case Right(sup) => assertIsSubtypeOf(t,sup)
+          }
+          substTy(Map(),Map(nm -> t),bdy)
+        case e1Ty =>
+          throw new Exception("tcExpr/TApp: subexpression does not have forall-type type: " + e1Ty)
+      }
+    case KApp(e1,k) =>
+      assertKindIsWellFormed(k)
+      tcExpr(e1) match {
+        case TForallK(nm,bdy) => substTy(Map(nm -> k), Map(), bdy)
+        case e1Ty =>
+          throw new Exception("tcExpr/KApp: subexpression does not have forall-kind type: " + e1Ty)
+      }
   }
 
   // require the decl to be in cEnv for recursion
@@ -311,12 +364,11 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     }
     val tc2 = tc1.addVarDecls(m.params)
     try {
-      val bdyTy: Type = tc2.tcExpr(m.bdy)
-      if (bdyTy != m.retTy)
-        throw new Exception("tcMethod: method body does not have expected type: " + m.retTy)
+      tc2.assertIsSubtypeOf(normalizeTy(tc2.tcExpr(m.bdy)),normalizeTy(m.retTy))
     } catch {
       case e : Exception =>
-
+        e.printStackTrace()
+        throw new Exception("tcMethod: error typechecking method body: " + e)
     }
   }
 
@@ -333,15 +385,21 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         case Left(k) => Left(substKind(kSubst, k))
         case Right(t) => Right(substTy(kSubst, tSubst, t))
       }
-      TForallTy(nm, kindOrBound1, substTy(kSubst, tSubst - nm, bdy))
-    case TForallK(nm, bdy) => TForallK(nm, substTy(kSubst - nm, tSubst, bdy))
+      val nm1 = freshen(nm)
+      TForallTy(nm1, kindOrBound1, substTy(kSubst, tSubst + (nm -> TVar(nm1)), bdy))
+    case TForallK(nm, bdy) =>
+      val nm1 = freshen(nm)
+      TForallK(nm1, substTy(kSubst + (nm -> KVar(nm1)), tSubst, bdy))
     case TTAbs(nm, kindOrBound, bdy) =>
       val kindOrBound1: Either[Kind, Type] = kindOrBound match {
         case Left(k) => Left(substKind(kSubst, k))
         case Right(t) => Right(substTy(kSubst, tSubst, t))
       }
-      TTAbs(nm, kindOrBound1, substTy(kSubst, tSubst - nm, bdy))
-    case TKAbs(nm, bdy) => TKAbs(nm, substTy(kSubst - nm, tSubst, bdy))
+      val nm1 = freshen(nm)
+      TTAbs(nm1, kindOrBound1, substTy(kSubst, tSubst + (nm -> TVar(nm1)), bdy))
+    case TKAbs(nm, bdy) =>
+      val nm1 = freshen(nm)
+      TKAbs(nm1, substTy(kSubst + (nm -> KVar(nm1)), tSubst, bdy))
     case TTApp(t1,t2) => TTApp(substTy(kSubst,tSubst,t1), substTy(kSubst,tSubst,t2))
     case TKApp(t,k) => TKApp(substTy(kSubst,tSubst,t), substKind(kSubst,k))
   }

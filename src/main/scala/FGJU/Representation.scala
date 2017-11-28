@@ -26,6 +26,13 @@ object Representation {
         |}
       """.stripMargin
 
+    val UnderTAbsSrc =
+      """class UnderTAbs {
+        |  <+X,T:X -> *,R:X -> *> (<A:X> R<A>) apply(<A:X> Fun<T<A>, R<A>> f, <A:X> T<A> x) {
+        |    return <A:X> f.<A>apply(x<A>);
+        |  }
+        |}
+      """.stripMargin
 
     /*
     val StrippedVisitorSrc =

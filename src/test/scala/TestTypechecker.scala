@@ -113,4 +113,14 @@ class TestTypechecker extends FlatSpec with Matchers {
     an [Exception] should be thrownBy new Typechecker().addClassDecls(List(A,B,C)).tcExpr(e)
   }
 
+  "alphaEquivTy" should "be true for syntactically equal types 1" in {
+    val A = parser.parseTy("<A> B<A>").get
+    new Typechecker().alphaEquivTy(A,A) should be(true)
+  }
+  "alphaEquivTy" should "be true for syntactically equal types 2" in {
+    val A = parser.parseTy("B<+A>").get
+    new Typechecker().alphaEquivTy(A,A) should be(true)
+  }
+
+  // TODO: test typechecking method bodies
 }
