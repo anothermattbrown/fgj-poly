@@ -9,9 +9,12 @@ object parser extends RegexParsers with PackratParsers {
 
   def expr: Parser[Expr] = atomicExpr ~ exprCont ^^ { case e ~ k => k(e) }
 
-  def atomicExpr: Parser[Expr] = thisExpr | varExpr | parens(expr) | kindAbsExpr | typeAbsExpr
+  def atomicExpr: Parser[Expr] = thisExpr | newExpr | varExpr | parens(expr) | kindAbsExpr | typeAbsExpr
 
   def thisExpr: Parser[Expr] = "this" ^^ (_ => This)
+
+  def newExpr : Parser[Expr] =
+    "new" ~> ident ~ gParams ~ parens(repsep(expr,",")) ^^ { case nm~gParams~params => New(nm,gParams,params) }
 
   def varExpr: Parser[Expr] = ident ^^ Var
 
@@ -73,12 +76,15 @@ object parser extends RegexParsers with PackratParsers {
   // Class declarations
   def classDecl: Parser[ClassDecl] =
     ("class" ~> ident) ~ gVarDecls ~ extendsClause.? ~ curlies(fieldDecls ~ methodDecls) ^^ {
-      case nm ~ gvds ~ parent ~ (fields ~ methods) => ClassDecl(gvds, nm, parent.getOrElse(Top), fields, methods)
+      case nm ~ gvds ~ parent ~ (fields ~ methods) =>
+        // sanity check: make sure field names are not duplicated
+        assert((Map() ++ fields).size == fields.length)
+        ClassDecl(gvds, nm, parent.getOrElse(Top), fields, methods)
     }
 
   def extendsClause : Parser[Type] = "extends" ~> ty | success(Top)
 
-  def fieldDecls: Parser[Map[String, Type]] = rep(fieldDecl <~ ";") ^^ { ds => Map() ++ ds }
+  def fieldDecls: Parser[List[(String, Type)]] = rep(fieldDecl <~ ";")
 
   def fieldDecl: Parser[(String, Type)] = ty ~ identStr ^^ { case ty ~ nm => (nm, ty) }
 

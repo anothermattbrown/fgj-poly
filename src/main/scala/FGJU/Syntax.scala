@@ -41,6 +41,7 @@ case class KForall(nm:Ident, k:Kind) extends Kind
 
 sealed trait Expr
 case object This extends Expr
+case class New(nm:Ident, gParams:List[Either[Kind,Type]], params : List[Expr]) extends Expr
 case class Var(nm: Ident) extends Expr
 case class Field(e: Expr, nm: String) extends Expr
 case class Call(e: Expr, gParams: List[Either[Kind,Type]], nm: String, params: List[Expr]) extends Expr
@@ -52,7 +53,7 @@ case class KApp(e:Expr, k : Kind) extends Expr
 case class ClassDecl(params: List[GVarDecl],
                      nm: Ident,
                      superClass: Type,
-                     fields: Map[String,Type],
+                     fields: List[(String,Type)],
                      methods: List[MethodDecl])
 
 case class VarDecl(nm: Ident, ty: Type)

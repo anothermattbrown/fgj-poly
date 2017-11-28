@@ -15,16 +15,17 @@ object Representation {
 
     // Polymorphic type-application function (as in Brown-Palsberg POPL'15)
     val TypeAppSrc =
-      """class TypeApp<+X,T:X -> *> {
-        |  <A:X> T<A> apply(<A:X> T<A> e) { return e<A>; }
+      """class TypeApp {
+        |  <+X,T:X -> *,A:X> T<A> apply(<A:X> T<A> e) { return e<A>; }
         |}
       """.stripMargin
 
     val KindAppSrc =
-      """class KindApp<T:<X>*> {
-        |  <+X> T<+X> apply(<+Y> T<+Y> e) { return e<+X>; }
+      """class KindApp {
+        |  <T:<X>*, +X> T<+X> apply(<+Y> T<+Y> e) { return e<+X>; }
         |}
       """.stripMargin
+
 
     /*
     val StrippedVisitorSrc =

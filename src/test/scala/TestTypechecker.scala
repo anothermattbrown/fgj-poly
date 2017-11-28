@@ -64,4 +64,53 @@ class TestTypechecker extends FlatSpec with Matchers {
     val sup = parser.parseTy("Map<Int,Foo>").get
     tc.getParentType(sub) should be(sup)
   }
+
+  "tcExpr" should "typecheck this expressions" in {
+    val A = parser.parseClassDecl("class A{}").get
+    new Typechecker().addClassDecl(A).setThisType(TVar("A")).tcExpr(This) should be (TVar("A"))
+  }
+  "tcExpr" should "typecheck new expressions" in {
+    val A = parser.parseClassDecl("class A{}").get
+    val e = parser.parseExpr("new A()").get
+    new Typechecker().addClassDecl(A).tcExpr(e) should be (TVar("A"))
+  }
+  "tcExpr" should "reject new expressions for undefined classes" in {
+    val e = parser.parseExpr("new A()").get
+    an [Exception] should be thrownBy new Typechecker().tcExpr(e)
+  }
+  "tcExpr" should "typecheck new expressions with generic parameters" in {
+    val A = parser.parseClassDecl("class A<B>{}").get
+    val e = parser.parseExpr("new A<Top>()").get
+    new Typechecker().addClassDecl(A).tcExpr(e) should be (TTApp(TVar("A"),Top))
+  }
+  "tcExpr" should "reject new expressions with too many generic parameters" in {
+    val A = parser.parseClassDecl("class A<B>{}").get
+    val e = parser.parseExpr("new A<Top,Top>()").get
+    an [Exception] should be thrownBy new Typechecker().addClassDecl(A).tcExpr(e)
+  }
+  "tcExpr" should "reject new expressions with too few generic parameters" in {
+    val A = parser.parseClassDecl("class A<B>{}").get
+    val e = parser.parseExpr("new A()").get
+    an [Exception] should be thrownBy new Typechecker().addClassDecl(A).tcExpr(e)
+  }
+  "tcExpr" should "typecheck new expressions with constructor parameters" in {
+    val A = parser.parseClassDecl("class A{}").get
+    val B = parser.parseClassDecl("class B{A a;}").get
+    val e = parser.parseExpr("new B(new A())").get
+    new Typechecker().addClassDecls(List(A,B)).tcExpr(e) should be (TVar("B"))
+  }
+  "tcExpr" should "allow constructor parameters to be subtypes of field types" in {
+    val A = parser.parseClassDecl("class A{}").get
+    val B = parser.parseClassDecl("class B{Top a;}").get
+    val e = parser.parseExpr("new B(new A())").get
+    new Typechecker().addClassDecls(List(A,B)).tcExpr(e) should be (TVar("B"))
+  }
+  "tcExpr" should "check the types of constructor parameters" in {
+    val A = parser.parseClassDecl("class A{}").get
+    val B = parser.parseClassDecl("class B{}").get
+    val C = parser.parseClassDecl("class C{A a;}").get
+    val e = parser.parseExpr("new C(new B())").get
+    an [Exception] should be thrownBy new Typechecker().addClassDecls(List(A,B,C)).tcExpr(e)
+  }
+
 }

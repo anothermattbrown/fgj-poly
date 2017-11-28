@@ -1,4 +1,4 @@
-import FGJU.{Representation, Typechecker, parser}
+import FGJU._
 import org.scalatest._
 import FGJU.Conversions._
 
@@ -9,10 +9,24 @@ class TestRepresentation extends FlatSpec with Matchers {
 
   }
   "TypeApp" should "typecheck" in {
-    print(parser.parseClassDecl(Representation.TypeAppSrc))
     val cd = parser.parseClassDecl(Representation.TypeAppSrc).get
     new Typechecker().addClassDecl(cd).tcClassDecl("TypeApp")
   }
+  "TypeApp" should "do instantiations" in {
+    val ASrc = "class A<T:*> {}"
+    val BSrc = "class B{}"
+    val TestSrc =
+      """class Test {
+        | A<B> go() {
+        |   return new TypeApp().<+ *, λT:*.A<T>, B> apply(<T> new A<T>());
+        | }
+        |}
+      """.stripMargin
+    val cds = List(Representation.TypeAppSrc, ASrc, BSrc, TestSrc).map(parser.parseClassDecl(_).get)
+    val tc = new Typechecker().addClassDecls(cds)
+    List[Ident]("A","B","Test").foreach(tc.tcClassDecl)
+  }
+
   "KindApp" should "typecheck" in {
     print(parser.parseClassDecl(Representation.KindAppSrc))
     val cd = parser.parseClassDecl(Representation.KindAppSrc).get

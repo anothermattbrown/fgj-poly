@@ -10,6 +10,15 @@ class TestParser extends FlatSpec with Matchers {
   "parseExpr" should "parse this expressions" in {
     parser.parseExpr("this").get should be (This)
   }
+  "parseExpr" should "parse new expressions" in {
+    parser.parseExpr("new A()").get should be (New("A", List(), List()))
+  }
+  "parseExpr" should "parse new expressions with generic parameters" in {
+    parser.parseExpr("new A<+*,B>()").get should be (New("A", List(Left(Star),Right(TVar("B"))), List()))
+  }
+  "parseExpr" should "parse new expressions with constructor parameters" in {
+    parser.parseExpr("new A(x,y)").get should be (New("A", List(), List(Var("x"),Var("y"))))
+  }
   "parseExpr" should "parse var expressions" in {
     parser.parseExpr("foo").get should be (Var("foo"))
   }
@@ -70,7 +79,7 @@ class TestParser extends FlatSpec with Matchers {
   }
 
   "parseClassDecl" should "parse class declarations with fields" in {
-    parser.parseClassDecl("class A { B b; }").get should be(ClassDecl(List(), "A", Top, Map("b" -> "B"), List()))
+    parser.parseClassDecl("class A { B b; }").get should be(ClassDecl(List(), "A", Top, List[(String,Type)](("b", "B")), List()))
   }
   "parseClassDecl" should "parse generic class declarations" in {
     val A = TVar("A")
@@ -78,7 +87,7 @@ class TestParser extends FlatSpec with Matchers {
     val m = MethodDecl(
       List(GVarDecl("A", GAType(Right(Top))), GVarDecl("A", GAType(Right(A)))),
       A, "m", List(decl_a,decl_a), Var("x"))
-    val c = ClassDecl(List(GVarDecl("T",GAType(Right(Top)))), "Foo", A, Map(), List(m))
+    val c = ClassDecl(List(GVarDecl("T",GAType(Right(Top)))), "Foo", A, List(), List(m))
     parser.parseClassDecl("class Foo<T> extends A { <A,A extends A> A m(A a, A a){return x;} }").get should be (c)
   }
 

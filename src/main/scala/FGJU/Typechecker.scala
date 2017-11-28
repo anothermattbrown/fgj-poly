@@ -61,6 +61,9 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
   }
 
   def instantiateGVars(decls: List[GVarDecl], params: List[Either[Kind, Type]]): (Map[Ident, Kind], Map[Ident, Type]) = {
+    if(decls.length != params.length)
+      throw new Exception("instantiateGVars: wrong number of generic parameters")
+
     val bindings: List[(GVarDecl, Either[Kind, Type])] = decls.zip(params)
     bindings.foldLeft(Map[Ident, Kind](), Map[Ident, Type]()) {
       case ((kSubst, tSubst), (GVarDecl(nm, GAKind), Left(k))) =>
@@ -239,6 +242,20 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case Var(nm) => env getOrElse(nm, throw new Exception("undeclared variable " + nm))
     case Field(obj, nm) => lookupFieldType(tcExpr(obj), nm)
     case This => thisType.get
+    case New(cNm,gParams,params) =>
+      val cd = cEnv(cNm)
+      val (kSubst,tSubst) = instantiateGVars(cd.params,gParams)
+
+      // check we have the right number of constructor parameters
+      assert(params.length == cd.fields.length, "tcExpr: wrong number of constructor parameters")
+
+      // now check the types of constructor parameters
+      cd.fields.map(fd => substTy(kSubst,tSubst,fd._2)).zip(params).foreach({
+        case (t, e) => assertIsSubtypeOf(tcExpr(e),t)
+      })
+
+      foldTypeApps(cNm,gParams)
+
     case Call(e, actualTys, nm, actuals) =>
       val m = lookupMethodSig(tcExpr(e), nm)
       assert(
@@ -338,7 +355,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       throw new Exception("lookupFieldType: wrong number of class type parameters")
 
     val (kSubst, tSubst) = instantiateGVars(classDecl.params, params)
-    val fieldTy = classDecl.fields(fNm)
+    val fieldTy = (Map() ++ classDecl.fields)(fNm)
     substTy(kSubst, tSubst, fieldTy)
   }
 
