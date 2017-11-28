@@ -18,10 +18,11 @@ object parser extends RegexParsers with PackratParsers {
 
   def varExpr: Parser[Expr] = ident ^^ Var
 
-  def kindAbsExpr: Parser[Expr] = anglesPlus(ident) ~ expr ^^ { case nm ~ e => KAbs(nm, e) }
+  def kindAbsExpr: Parser[Expr] =
+    (LambdaPlus ~> ident <~ ".") ~ expr ^^ { case nm ~ e => KAbs(nm, e) }
 
-  def typeAbsExpr: Parser[Expr] = angles(ident ~ kindAnnotationOrExtendsClause) ~ expr ^^ { case nm ~ kindOrBound ~ bdy => TAbs(nm, kindOrBound, bdy) }
-
+  def typeAbsExpr: Parser[Expr] =
+    (Lambda ~> ident) ~ kindAnnotationOrExtendsClause ~ ("." ~> expr) ^^ { case nm ~ kindOrBound ~ bdy => TAbs(nm, kindOrBound, bdy) }
 
   def exprCont: Parser[Expr => Expr] =
     (methodOrFieldCont | typeInstantiationCont | kindInstantiationCont).* ^^ {
@@ -134,11 +135,11 @@ object parser extends RegexParsers with PackratParsers {
 
   def forallPlus: Parser[Unit] = ("∀+" | "forall+") ^^ { _ => () }
 
-  def Lambda: Parser[Unit] = ("Λ" | "Lambda") ^^ { _ => () }
+  def Lambda: Parser[Unit] = ("Λ" | "Lambda" | "/\\") ^^ { _ => () }
 
-  def LambdaPlus: Parser[Unit] = ("Λ+" | "Lambda+") ^^ { _ => () }
+  def LambdaPlus: Parser[Unit] = ("Λ+" | "Lambda+" | "/\\+") ^^ { _ => () }
 
-  def lambda: Parser[Unit] = ("λ" | "lambda") ^^ { _ => () }
+  def lambda: Parser[Unit] = ("λ" | "lambda" | "\\") ^^ { _ => () }
 
   def kindAnnotationOrExtendsClause: Parser[Either[Kind, Type]] =
     (":" ~> kind ^^ (Left(_))) | ("extends" ~> ty ^^ (Right(_)) | success(Right(Top)))
@@ -153,15 +154,21 @@ object parser extends RegexParsers with PackratParsers {
 
   def squares[t](p: Parser[t]): Parser[t] = "[" ~> p <~ "]"
 
-  def parseExpr(str: String): ParseResult[Expr] = parse(expr, str)
+  def getParseResult[T](pr : ParseResult[T]) : T = pr match {
+    case Success(result,_) => result
+    case Failure(msg,next)    => throw new Exception("parse failure: " + msg + "\n" + next.pos)
+    case Error(msg,_)      => throw new Exception("parse error: " + msg)
+  }
 
-  def parseClassDecl(str: String): ParseResult[ClassDecl] = parse(classDecl, str)
+  def parseExpr(str: String): Expr = getParseResult(parse(expr, str))
 
-  def parseVarDecl(str: String): ParseResult[VarDecl] = parse(varDecl, str)
+  def parseClassDecl(str: String): ClassDecl = getParseResult(parse(classDecl,str))
 
-  def parseMethodDecl(str: String): ParseResult[MethodDecl] = parse(methodDecl, str)
+  def parseVarDecl(str: String): VarDecl = getParseResult(parse(varDecl, str))
 
-  def parseTy(str: String): ParseResult[Type] = parse(ty, str)
+  def parseMethodDecl(str: String): MethodDecl = getParseResult(parse(methodDecl, str))
 
-  def parseKind(str: String): ParseResult[Kind] = parse(kind, str)
+  def parseTy(str: String): Type = getParseResult(parse(ty, str))
+
+  def parseKind(str: String): Kind = getParseResult(parse(kind, str))
 }

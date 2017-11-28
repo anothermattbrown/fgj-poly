@@ -29,31 +29,10 @@ object Representation {
     val UnderTAbsSrc =
       """class UnderTAbs {
         |  <+X,T:X -> *,R:X -> *> (<A:X> R<A>) apply(<A:X> Fun<T<A>, R<A>> f, <A:X> T<A> x) {
-        |    return <A:X> f.<A>apply(x<A>);
+        |    return /\A:X. f<A>.apply(x<A>);
         |  }
         |}
       """.stripMargin
-
-    /*
-    val StrippedVisitorSrc =
-      """class StrippedVisitor<This,Env,Ret> {
-        |  <A> Ret visitStripped(Expr<This,Env,A> e) { return this.<A>visitStripped(e); }
-        |}
-      """.stripMargin
-
-    val StrippedSrc =
-      """class Stripped<This,Env> {
-        |  <Ret> Ret accept(StrippedVisitor<This,Env,Ret> v) { return this.<Ret>accept(v); }
-        |}
-      """.stripMargin
-
-    val SomeStrippedSrc =
-      """class SomeStripped<A,This,Env> extends Stripped<This,Env> {
-        |  Expr<This,Env,A> strippedExpr;
-        |  <Ret> Ret accept(StrippedVisitor<This,Env,Ret> v) { return v.<A>visitStripped(this.strippedExpr); }
-        |}
-      """.stripMargin
-      */
 
     val FunSrc =
       """class Fun<A,R> {
