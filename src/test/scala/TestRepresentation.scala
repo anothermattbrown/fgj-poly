@@ -42,9 +42,13 @@ class TestRepresentation extends FlatSpec with Matchers {
     ("SupertypeOf", SupertypeOfSrc),
     ("Expr",        ExprSrc),
     ("ExprVisitor", ExprVisitorSrc),
+    ("BoundExpr",   BoundExprSrc),
+    ("Exprs",       ExprsSrc),
     ("Index",       IndexSrc),
     ("Eq",          EqSrc),
     ("Fun",         FunSrc),
+    ("Class",       ClassSrc),
+    ("Obj",         ObjSrc),
   )
 
   it should "parse all classes" in {
@@ -61,14 +65,6 @@ class TestRepresentation extends FlatSpec with Matchers {
   it should "typecheck all classes" in {
     val nms = srcs.map(_._1)
     val cds = srcs.map(p => parser.parseClassDecl(p._2))
-    val tc = new Typechecker().addClassDecls(cds)
-    nms.foreach(nm =>
-      try {
-        tc.tcClassDecl(nm)
-      } catch {
-        case e : Exception =>
-          throw new Exception(s"error typechecking $nm", e)
-      }
-    )
+    new Typechecker().addClassDecls(cds)
   }
 }
