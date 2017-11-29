@@ -440,9 +440,11 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     val classDecl = cEnv(nm)
 
     if (classDecl.params.length != params.length)
-      throw new Exception("lookupFieldType: wrong number of class type parameters")
+      throw new Exception("lookupMethodSig: wrong number of class type parameters")
     val (kSubst, tSubst) = instantiateGVars(classDecl.params, params)
-    val md = classDecl.methods.filter(m => m.nm == mNm).head
+    val md = classDecl.methods.filter(m => m.nm == mNm).headOption.getOrElse(
+      throw new Exception(s"lookupMethodSig: no method with name $mNm in class ${classDecl.nm}")
+    )
     val sig = MethodSig(md.tParams, md.retTy, md.params.map(_.ty))
     substMethodSig(kSubst, tSubst, sig)
   }
