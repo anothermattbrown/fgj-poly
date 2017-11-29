@@ -226,7 +226,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         addTypeVar(d.nm, Right(upperBound))
     }
 
-  def addTVarDecls(decls: List[GVarDecl]): Typechecker = {
+  def addGVarDecls(decls: List[GVarDecl]): Typechecker = {
     decls.foldLeft(this)({ case (tc, d) => tc.addGVarDecl(d) })
   }
 
@@ -299,7 +299,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       foldTypeApps(cNm,gParams)
 
     case Call(e, actualTys, nm, actuals) =>
-      val m = lookupMethodSig(tcExpr(e), nm)
+      val m = lookupMethodSig(tcExpr(e), nm).get
       assert(
         actualTys.length == m.tParams.length,
         "wrong number of type parameters in call: " + Call(e, actualTys, nm, actuals)
@@ -363,12 +363,60 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       assert(tcInner.tcType(ty) == Star, "tcClassDecl: field " + nm + " type does not have kind *: " + ty)
     })
 
+    // typecheck methods
     c.methods.foreach(tcInner.tcMethod)
+
+    // check validity of method overrides
+    val classType : Type = c.params.foldLeft[Type](TVar(c.nm))({
+      case (ty, GVarDecl(nm,GAKind))    => TKApp(ty,KVar(nm))
+      case (ty, GVarDecl(nm,GAType(_))) => TTApp(ty,TVar(nm))
+    })
+
+    c.methods.foreach({md =>
+      val sig = tcOuter.lookupMethodSig(classType, md.nm).get
+      tcOuter.lookupMethodSig(c.superClass,md.nm).foreach({superSig =>
+        tcOuter.assertValidMethodSigOverride(sig,superSig)
+      })
+    })
+  }
+
+  def assertValidMethodSigOverride(subSig : MethodSig, superSig : MethodSig) : Unit = {
+    // check the generic parameters
+    assert(subSig.tParams.length == superSig.tParams.length,
+      "assertValidMethodSigOverride: overriding methods must have the same number of generic parameters"
+    )
+
+    // rename subSig's generic params to match superSig's names.
+    val (kRename,tRename) = subSig.tParams.zip(superSig.tParams).foldLeft[(Map[Ident,Ident], Map[Ident,Ident])](Map(),Map())({
+      case ((kRename,tRename), (GVarDecl(nm1,GAKind), GVarDecl(nm2,GAKind))) =>
+        (kRename + (nm1 -> nm2), tRename)
+      case ((kRename,tRename), (GVarDecl(nm1,GAType(kb1)), GVarDecl(nm2,GAType(kb2)))) =>
+        assert(alphaEquivKindOrBound(kb1,kb2,kRename,tRename))
+        (kRename, tRename + (nm1 -> nm2))
+    })
+
+    // type checker with superSig's generic params in scope.
+    val tc = this.addGVarDecls(superSig.tParams)
+
+    val kSubst = kRename.mapValues(KVar)
+    val tSubst = tRename.mapValues(TVar)
+
+    // check covariance of return types
+    tc.assertIsSubtypeOf(substTy(kSubst,tSubst,subSig.retTy), superSig.retTy)
+
+    assert(subSig.paramTypes.length == superSig.paramTypes.length,
+      s"assertValidMethodSigOverride: overriding methods must have the same number of parameters"
+    )
+
+    // check contravariance of argument types
+    for ((subT,supT) <- subSig.paramTypes.zip(superSig.paramTypes)) {
+      tc.assertIsSubtypeOf(supT,subT)
+    }
   }
 
   def tcMethod(m: MethodDecl): Unit = {
     // add type parameters to the context. this checks bounds are well-formed
-    val tc1 = addTVarDecls(m.tParams)
+    val tc1 = addGVarDecls(m.tParams)
     try {
       val retTyKind : Kind = tc1.tcType(m.retTy)
       if(retTyKind != Star)
@@ -434,7 +482,9 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
 
   case class MethodSig(tParams: List[GVarDecl], retTy: Type, paramTypes: List[Type])
 
-  def lookupMethodSig(ty: Type, mNm: String): MethodSig = {
+  def lookupMethodSig(ty: Type, mNm: String): Option[MethodSig] = {
+    if(ty == Top) return None
+
     // Don't support field access on quantified types.
     val (nm,params) = unfoldTypeApps(ty)
     val classDecl = cEnv(nm)
@@ -442,11 +492,10 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     if (classDecl.params.length != params.length)
       throw new Exception("lookupMethodSig: wrong number of class type parameters")
     val (kSubst, tSubst) = instantiateGVars(classDecl.params, params)
-    val md = classDecl.methods.filter(m => m.nm == mNm).headOption.getOrElse(
-      throw new Exception(s"lookupMethodSig: no method with name $mNm in class ${classDecl.nm}")
-    )
-    val sig = MethodSig(md.tParams, md.retTy, md.params.map(_.ty))
-    substMethodSig(kSubst, tSubst, sig)
+    classDecl.methods.find(m => m.nm == mNm).map({ md =>
+      val sig = MethodSig(md.tParams, md.retTy, md.params.map(_.ty))
+      substMethodSig(kSubst, tSubst, sig)
+    })
   }
 
   def substMethodSig(kSubst: Map[Ident, Kind], tSubst: Map[Ident, Type], m: MethodSig): MethodSig = {

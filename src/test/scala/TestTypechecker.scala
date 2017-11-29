@@ -127,4 +127,33 @@ class TestTypechecker extends FlatSpec with Matchers {
   }
 
   // TODO: test typechecking method bodies
+
+  "assertValidMethodSigOverride" should "allow covariance in return types" in {
+    val A = parser.parseClassDecl("class A{}")
+    val B = parser.parseClassDecl("class B extends A{}")
+    val Foo = parser.parseClassDecl("class Foo{ A m() {return new A(); }}")
+    val Bar = parser.parseClassDecl("class Bar extends Foo {B m() {return new B(); }}")
+    new Typechecker().addClassDecls(List(A,B,Foo,Bar))
+  }
+  "assertValidMethodSigOverride" should "disallow contravariance in return types" in {
+    val A = parser.parseClassDecl("class A{}")
+    val B = parser.parseClassDecl("class B extends A{}")
+    val Foo = parser.parseClassDecl("class Foo{ B m() {return new B(); }}")
+    val Bar = parser.parseClassDecl("class Bar extends Foo {A m() {return new A(); }}")
+    an [Exception] should be thrownBy new Typechecker().addClassDecls(List(A,B,Foo,Bar))
+  }
+  "assertValidMethodSigOverride" should "allow contravariance in argument types" in {
+    val A = parser.parseClassDecl("class A{}")
+    val B = parser.parseClassDecl("class B extends A{}")
+    val Foo = parser.parseClassDecl("class Foo{ A m(B b) {return b; }}")
+    val Bar = parser.parseClassDecl("class Bar extends Foo {A m(A a) {return a; }}")
+    new Typechecker().addClassDecls(List(A,B,Foo,Bar))
+  }
+  "assertValidMethodSigOverride" should "disallow covariance in argument types" in {
+    val A = parser.parseClassDecl("class A{}")
+    val B = parser.parseClassDecl("class B extends A{}")
+    val Foo = parser.parseClassDecl("class Foo{ A m(A a) {return a; }}")
+    val Bar = parser.parseClassDecl("class Bar extends Foo {A m(B b) {return b; }}")
+    an [Exception] should be thrownBy new Typechecker().addClassDecls(List(A,B,Foo,Bar))
+  }
 }
