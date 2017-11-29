@@ -41,9 +41,10 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       case ((kSubst, tSubst), (GVarDecl(nm, GAType(kindOrBound)), Right(t))) =>
         kindOrBound match {
           case Left(k) =>
-            val k1 = substKind(kSubst, k)
-            assertKindIsWellFormed(k1)
-            assert(tcType(t) == k1, "Type " + t + " does not have expected kind " + k1)
+            val expected = substKind(kSubst, k)
+            assertKindIsWellFormed(expected)
+            val got = tcType(t)
+            assert(alphaEquivK(got, expected), s"Type $t does not have expected kind $expected. It has kind $got")
           case Right(sup) =>
             val sup1 = substTy(kSubst, tSubst, sup)
             assert(tcType(sup1) == Star, "Upper bound " + sup1 + " does not have kind *")
@@ -108,10 +109,12 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
           normalizeTy(bdy, tSubst + (nm -> t2nf), kSubst)
         case t1nf => TTApp(t1nf,t2nf)
       }
-    case TKApp(t, k) => normalizeTy(t, tSubst, kSubst) match {
-      case TKAbs(nm, bdy) => normalizeTy(bdy, tSubst, kSubst + (nm -> k))
-      case t1 => TKApp(t1,k)
-    }
+    case TKApp(t, k) =>
+      val k1 = substKind(kSubst,k)
+      normalizeTy(t, tSubst, kSubst) match {
+        case TKAbs(nm, bdy) => normalizeTy(bdy, tSubst, kSubst + (nm -> k1))
+        case t1 => TKApp(t1,k1)
+      }
     case TTAbs(nm, kindOrBound, bdy) =>
       val kindOrBound1 = kindOrBound match {
         case Left(k) => Left(substKind(kSubst, k))
@@ -172,13 +175,16 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
   def assertIsSubtypeOf(sub: Type, sup: Type): Unit = {
     // precondition: sub and sup are both valid types
     if (alphaEquivTy(sub, sup)) return ()
+    //if (sup == Top) return ()
     sub match {
       case TVar(nm) if tEnv contains nm =>
         val kindOrBound: Either[Kind, Type] = tEnv(nm)
         val parent: Type = kindOrBound.getOrElse(throw new Exception("assertSubtypeOf: type variable is not kind *"))
         assertIsSubtypeOf(parent, sup)
-      case TForallTy(_, _, _) => throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
-      case TForallK(_, _) => throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
+      case TForallTy(_, _, _) =>
+        throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
+      case TForallK(_, _) =>
+        throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
       case _ => assertIsSubtypeOf(getParentType(sub), sup)
     }
   }
@@ -194,8 +200,17 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
 
     val tc = new Typechecker(cEnv ++ ds.map(d => d.nm -> d), kEnv, tEnv, env, thisType)
 
-    // typecheck last, so all the recursion/mutual recursion will work
-    ds.foreach(d => tc.tcClassDecl(d.nm))
+    // typecheck last, so all the (mutual) recursion will work
+    ds.map(_.nm).foreach(nm =>
+      try {
+        tc.tcClassDecl(nm)
+      } catch {
+        case e : Exception =>
+          throw new Exception(s"addClassDecls: error typechecking $nm", e)
+        case e : AssertionError =>
+          throw new Exception(s"addClassDecls: error typechecking $nm", e)
+      }
+    )
 
     tc
   }
@@ -292,7 +307,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       val (kSubst, tSubst) = instantiateGVars(m.tParams, actualTys)
 
       // check we have the right number of parameters
-      assert(actuals.length == m.paramTypes.length)
+      assert(actuals.length == m.paramTypes.length, s"tcExpr/call: wrong number of parameters for call to $nm")
       var expectedTypes = m.paramTypes.map(substTy(kSubst, tSubst, _))
       var actualTypes = actuals.map(tcExpr)
       actualTypes.map(normalizeTy(_)).zip(expectedTypes.map(normalizeTy(_))).foreach {
