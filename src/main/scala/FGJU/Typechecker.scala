@@ -311,7 +311,13 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       var expectedTypes = m.paramTypes.map(substTy(kSubst, tSubst, _))
       var actualTypes = actuals.map(tcExpr)
       actualTypes.map(normalizeTy(_)).zip(expectedTypes.map(normalizeTy(_))).foreach {
-        case (sub, sup) => assertIsSubtypeOf(sub, sup)
+        case (sub, sup) =>
+          try {
+            assertIsSubtypeOf(sub, sup)
+          } catch {
+            case e : Exception =>
+              throw new Exception(s"method call argument subtype check failed", e)
+          }
       }
 
       substTy(kSubst, tSubst, m.retTy)
@@ -426,8 +432,11 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         throw new Exception("tcMethod: return type " + m.retTy + " failed to type-check\n" + e)
     }
     val tc2 = tc1.addVarDecls(m.params)
+    val bdyTy = tc2.tcExpr(m.bdy)
+    val bdyTyNf = normalizeTy(bdyTy)
+    val retTyNf = normalizeTy(m.retTy)
     try {
-      tc2.assertIsSubtypeOf(normalizeTy(tc2.tcExpr(m.bdy)),normalizeTy(m.retTy))
+      tc2.assertIsSubtypeOf(bdyTyNf,retTyNf)
     } catch {
       case e : Exception =>
         e.printStackTrace()

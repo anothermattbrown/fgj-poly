@@ -1,44 +1,87 @@
 package FGJU
 
 object Representation {
-    val SupertypeOfSrc =
-      """class SupertypeOf<A,B extends A> {
+  val SupertypeOfSrc =
+    """class SupertypeOf<A,B extends A> {
         |  A upcast(B b) { return b; }
         |}
       """.stripMargin
-
-    // Polymorphic type-application function (as in Brown-Palsberg POPL'15)
+  // Polymorphic type-application function (as in Brown-Palsberg POPL'15)
     val TypeAppSrc =
       """class TypeApp {
         |  <+X,T:X -> *,A:X> T<A> apply(<A:X> T<A> e) { return e<A>; }
         |}
-      """.stripMargin
+      """.
 
-    val KindAppSrc =
+        stripMargin
+
+    val
+    KindAppSrc =
+
       """class KindApp {
         |  <T:<X>*, +X> T<+X> apply(<+Y> T<+Y> e) { return e<+X>; }
         |}
       """.stripMargin
 
     val UnderTAbsSrc =
+
       """class UnderTAbs {
         |  <+X,T:X -> *,R:X -> *> (<A:X> R<A>) apply(<A:X> Fun<T<A>, R<A>> f, <A:X> T<A> x) {
         |    return /\A:X. f<A>.apply(x<A>);
         |  }
         |}
-      """.stripMargin
+      """.
+        stripMargin
 
-    val FunSrc =
+    val
+    FunSrc =
       """class Fun<A,R> {
         |  R apply(A a) { return this.apply(a); }
+        |}
+      """.
+        stripMargin
+  val PairSrc =
+    """class Pair<A,B> {
+        |  A a;
+        |  B b;
         |}
       """.stripMargin
 
     val IndexSrc =
       """class Index<Env,T> {
+        |  <R> R accept(IndexVisitor<Env,T,R> v) {
+        |    return this.<R>accept(v);
+        |  }
+        |}
+      """.
+        stripMargin
+
+    val IndexVisitorSrc =
+      """class IndexVisitor<Env,T,R> {
+        |   <Env1>   R visitZ(Eq<Env,Pair<T,Env1>> eq) { return this.<Env1>visitZ(eq); }
+        |   <A,Env1> R visitS(Eq<Env,Pair<A,Env1>> eq, Index<Env1,T> idx) { return this.<A,Env1>visitS(eq,idx); }
+        |}
+      """
+        .stripMargin
+
+    val IndexZSrc =
+      """class IndexZ<T,Env> extends Index<Pair<T,Env>, T> {
+        |  <R> R accept(IndexVisitor<Pair<T,Env>,T,R> v) {
+        |    return v.<Env>visitZ(new Refl<Pair<T,Env>>());
+        |  }
+        |}
+      """.
+        stripMargin
+
+    val IndexSSrc =
+      """class IndexS<S,T,Env> extends Index<Pair<S,Env>, T> {
+        |  Index<Env,T> idx;
+        |  <R> R accept(IndexVisitor<Pair<S,Env>, T, R> v) {
+        |    return v.<S,Env>visitS(new Refl<Pair<S,Env>>(), this.idx);
+        |  }
         |}
       """.stripMargin
-
+  // Leibniz equality proofs, as in Brown-Palsberg POPL17/18
     val EqSrc =
       """class Eq<A,B> {
         | <F : * -> *> F<B> toRight(F<A> x) { return this.<F>toRight(x); }
@@ -46,6 +89,22 @@ object Representation {
         |}
       """.stripMargin
 
+    val ReflSrc =
+      """class Refl<A> extends Eq<A,A> {
+        |  <F : * -> *> F<A> toRight(F<A> x) { return x; }
+        |  <F : * -> *> F<A> toLeft(F<A> x) { return x; }
+        |}
+      """.stripMargin
+
+  // TODO: new way of encoding class, objects, and subtyping
+  // rather than having each class point to its supertype,
+  // use subtype witnesses. these witness two properties: the
+  // fields tuple type of a subtype is a subtype of the supertype's
+  // fields tuple type. Similar for methods. The tuple subtype
+  // witnesses are similar to Index.
+
+  // Encoding of object values. The self-referential knot is tied simultaneously for all objects.
+  // this is a classical technique from the object encoding literature. See the Abadi-Cardelli book.
   val ObjSrc =
     """class Obj<Fields,Methods,Super> {
       |  Fields fields;
@@ -71,6 +130,53 @@ object Representation {
       |}
     """.stripMargin
 
+  val VarExprSrc =
+    """class VarExpr<This,Env,T> extends Expr<This,Env,T> {
+      |  Index<Env,T> idx;
+      |  <Ret:* -> *> Ret<T> accept(ExprVisitor<This,Env,T,Ret> v) { return v.var(this.idx); }
+      |}
+    """.stripMargin
+
+  val ThisExprSrc =
+    """class ThisExpr<This,Env> extends Expr<This,Env,This> {
+      |  <Ret:* -> *> Ret<This> accept(ExprVisitor<This,Env,This,Ret> v) { return v._this(new Refl<This>()); }
+      |}
+    """.stripMargin
+
+  val GetFieldSrc =
+    """class GetFieldExpr<This,Env,Fields,Methods,Super,T> extends Expr<This,Env,T> {
+      |  Expr<This,Env,Obj<Fields,Methods,Super>> e;
+      |  Index<Fields,T> fld;
+      |  <Ret:* -> *> Ret<T> accept(ExprVisitor<This,Env,T,Ret> v) { return v.<Fields,Methods,Super>getField(this.e, this.fld); }
+      |}
+    """.stripMargin
+
+  val CallMethodSrc =
+    """class CallMethodExpr<This,Env,Fields,Methods,Super,Args,T> extends Expr<This,Env,T> {
+      |  Expr<This,Env,Obj<Fields,Methods,Super>> e;
+      |  Index<Methods,BoundExpr<Args,T>> method;
+      |  Exprs<This,Env,Args> args;
+      |  <Ret : * -> *> Ret<T> accept(ExprVisitor<This,Env,T,Ret> v) {
+      |    return v.<Fields,Methods,Super,Args>callMethod(this.e,this.method,this.args);
+      |  }
+      |}
+    """.stripMargin
+
+  val NewObjectSrc =
+    """class NewObject<This,Env,Fields,Methods,Super> extends Expr<This,Env,Obj<Fields,Methods,Super>> {
+      |  Class<Fields,Methods,Super> _class;
+      |  Exprs<This,Env,Fields> fields;
+      |
+      |  <Ret : * -> *> Ret<Obj<Fields,Methods,Super>> accept(ExprVisitor<This,Env,Obj<Fields,Methods,Super>,Ret> v) {
+      |    return v.<Fields,Methods,Super>newObject(
+      |      new Refl<Obj<Fields,Methods,Super>>(),
+      |      this._class,
+      |      this.fields
+      |    );
+      |  }
+      |}
+    """.stripMargin
+
   // expression with the receiver type obscured (via an existential)
   val BoundExprSrc =
     """class BoundExpr<Env,T> {
@@ -85,8 +191,9 @@ object Representation {
       |}
     """.stripMargin
 
-  val ExprVisitorSrc =
-      """class ExprVisitor<This,Env,T,Ret : * -> *> {
+  val
+  ExprVisitorSrc =
+    """class ExprVisitor<This,Env,T,Ret : * -> *> {
         |  Ret<T> var(Index<Env,T> idx) { return this.var(idx); }
         |  Ret<T> _this(Eq<T,This> eq) { return this._this(eq); }
         |
@@ -111,6 +218,12 @@ object Representation {
         |            Class<Fields,Methods,Super> _class,
         |            Exprs<This,Env,Fields> fields) {
         |    return this.<Fields,Methods,Super>newObject(eq,_class,fields);
+        |  }
+        |
+        |  <Fields,Methods>
+        |  Ret<T>
+        |  upcast(Expr<This,Env,Obj<Fields,Methods,T>> e) {
+        |    return this.<Fields,Methods>upcast(e);
         |  }
         |
         |  <+X, F : X -> *>
@@ -174,13 +287,14 @@ object Representation {
       |      return this.<This,Env,T,+K>kApp(e);
       |    }
       |}
-    """.stripMargin
-
+    """.
+      stripMargin
   // Tagless-final style.
   // Gets tricky though: how do we account for the fact that Fields/Methods/Super refer
   // to R? We can make them (* -> *) -> *, and write Fields<R>, etc. Is that sufficient?
   val SemSrc =
-    """class Sem<This,Env,R : * -> *> {
+
+  """class Sem<This,Env,R : * -> *> {
       |    R<This>
       |    _this() { return this._this(); }
       |
@@ -237,7 +351,7 @@ object Representation {
     """.stripMargin
 
 
-    /* Need a way to link Q = [X] T and ExpQ = [X] Exp<T>.
+  /* Need a way to link Q = [X] T and ExpQ = [X] Exp<T>.
        at inst, could have Q ~> T[X:=S] and ExpQ ~> Exp<T[X:=S]>
        but then at tAbs : Exp<Q>, we need an ExpQ.
        how can we link up the ExpQ inside and outside the tAbs?
@@ -289,8 +403,6 @@ object Representation {
        Is it really sufficient that its FTVs are not in the term env?
        I don't know; seems fishy
      */
-  }
-
 
   /*
 
@@ -319,3 +431,5 @@ object Representation {
     cast(Expr<This,Env,Obj<Fields,Methods,T>> e);
 
    */
+
+}

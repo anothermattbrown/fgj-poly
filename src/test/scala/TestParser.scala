@@ -104,6 +104,14 @@ class TestParser extends FlatSpec with Matchers {
       """.stripMargin
     parser.parseMethodDecl(src)
   }
+  "parseMethodDecl" should "parse TupleSubtypeTrans's visitRefl method" in {
+    var src =
+      """  TupleSubtype<A,C> visitRefl(Eq<A,B> eq) {
+        |    return eq.<λT:*. TupleSubtype<T,C>>toLeft(this.subBC);
+        |  }
+      """.stripMargin
+    parser.parseMethodDecl(src)
+  }
 
   "parseClassDecl" should "parse class declarations with fields" in {
     parser.parseClassDecl("class A { B b; }") should be(ClassDecl(List(), "A", Top, List[(String,Type)](("b", "B")), List()))
