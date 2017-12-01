@@ -58,6 +58,19 @@ class TestTypechecker extends FlatSpec with Matchers {
     val tyB = parser.parseTy("B")
     tc.lookupFieldType(tyA, "x") should be(tyB)
   }
+
+  "lookupMethodSig" should "handle inheritance" in {
+    val cA = parser.parseClassDecl("class A{}")
+    val cB = parser.parseClassDecl("class B{ A a() { return new A(); }}")
+    val cC = parser.parseClassDecl("class C extends B {}")
+    val tc = new Typechecker().addClassDecls(List(cA,cB,cC))
+    val tyA = parser.parseTy("A")
+    val tyC = parser.parseTy("C")
+    tc.lookupMethodSig(tyC, "a").get should be (
+      tc.MethodSig(List(), tyA, "a", List())
+    )
+  }
+
   "getParentType" should "handle generic classes" in {
     val cInt    = parser.parseClassDecl("class Int{}")
     val cFoo    = parser.parseClassDecl("class Foo{}")

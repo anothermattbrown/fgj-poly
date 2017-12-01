@@ -24,8 +24,10 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
 
   def addTypeDef(nm:Ident, kind:Kind, defn:Type) : Typechecker = {
     assertKindIsWellFormed(kind)
-    assert(tcType(defn) == kind)
-    new Typechecker(cEnv, kEnv, tEnv - nm, tDefs + (nm -> (kind,defn)), env, thisType)
+    assert(tcType(defn) == kind, s"addTypeDef: type $defn does not have kind $kind")
+    // make sure tDefs is idempotent, by expanding any defs in the new defn
+    val defn1 = substTy(Map(), tDefs.mapValues(_._2), defn)
+    new Typechecker(cEnv, kEnv, tEnv - nm, tDefs + (nm -> (kind,defn1)), env, thisType)
   }
 
   def addKindVar(nm: Ident): Typechecker = new Typechecker(cEnv, kEnv + nm, tEnv, tDefs, env, thisType)
@@ -59,23 +61,6 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         }
         (kSubst, tSubst + (nm -> t))
     }
-  }
-
-  def foldTypeApps(nm:Ident, params : List[Either[Kind,Type]]) =
-    params.foldLeft[Type](TVar(nm))({
-      case (t1,Left(k)) => TKApp(t1,k)
-      case (t1,Right(p)) => TTApp(t1,p)
-    })
-
-  def unfoldTypeApps(t:Type) : (Ident,List[Either[Kind,Type]]) = t match {
-    case TVar(nm) => (nm,List())
-    case TTApp(t1,param) =>
-      val (nm,params) = unfoldTypeApps(t1)
-      (nm,params ++ List(Right(param)))
-    case TKApp(t1,param) =>
-      val (nm,params) = unfoldTypeApps(t1)
-      (nm,params ++ List(Left(param)))
-    case _ => throw new Exception("unfoldTypeApps: cannot unfold type " + t)
   }
 
   def getParentType(t: Type): Type = t match {
@@ -341,8 +326,22 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       assert(params.length == cd.fields.length, "tcExpr: wrong number of constructor parameters")
 
       // now check the types of constructor parameters
-      cd.fields.map(fd => substTy(kSubst,tSubst,fd._2)).zip(params).foreach({
-        case (t, e) => assertIsSubtypeOf(tcExpr(e),t)
+      cd.fields.map(fd => (fd._1,substTy(kSubst,tSubst,fd._2))).zip(params).foreach({
+        case ((nm,t), e) =>
+          try {
+            assertIsSubtypeOf(tcExpr(e), t)
+          } catch {
+            case exn : Exception =>
+              throw new Exception(
+                s"""constructor parameter is not a subtype of the declared field type.
+                   |Class name: ${cNm.nm}
+                   |Field name: $nm
+                   |Field type: $t
+                   |Parameter expr: $e
+                 """.stripMargin,
+                exn
+              )
+          }
       })
 
       foldTypeApps(cNm,gParams)
@@ -584,6 +583,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     cd.methods.find(m => m.nm == mNm)
       .map(methodSig)
       .map(substMethodSig(kSubst,tSubst,_))
+      .orElse(lookupMethodSig(getParentType(ty),mNm))
   }
 
   def substMethodSig(kSubst: Map[Ident, Kind], tSubst: Map[Ident, Type], m: MethodSig): MethodSig = {

@@ -73,3 +73,24 @@ case class GAType(kindOrBound : Either[Kind,Type]) extends GenericAnnotation
 case class MethodDecl(tParams: List[GVarDecl], retTy: Type, nm: String, params: List[VarDecl], bdy: Expr)
 
 class Program(classDecls: List[ClassDecl], expr: Expr)
+
+object foldTypeApps {
+  def apply(nm: Ident, params: List[Either[Kind, Type]]): Type =
+    params.foldLeft[Type](TVar(nm))({
+      case (t1, Left(k)) => TKApp(t1, k)
+      case (t1, Right(p)) => TTApp(t1, p)
+    })
+}
+
+object unfoldTypeApps {
+  def apply(t: Type): (Ident, List[Either[Kind, Type]]) = t match {
+    case TVar(nm) => (nm, List())
+    case TTApp(t1, param) =>
+      val (nm, params) = unfoldTypeApps(t1)
+      (nm, params ++ List(Right(param)))
+    case TKApp(t1, param) =>
+      val (nm, params) = unfoldTypeApps(t1)
+      (nm, params ++ List(Left(param)))
+    case _ => throw new Exception("unfoldTypeApps: cannot unfold type " + t)
+  }
+}
