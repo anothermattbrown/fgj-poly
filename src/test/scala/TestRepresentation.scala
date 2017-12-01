@@ -39,7 +39,12 @@ class TestRepresentation extends FlatSpec with Matchers {
   }
 
   val srcs = List(
-    ("SupertypeOf", SupertypeOfSrc),
+    ("Sub",         SubSrc),
+    ("SubRefl",        SubReflSrc),
+    ("SubTrans",       SubTransSrc),
+    ("SubPair",        SubPairSrc),
+    ("SubExprVisitor", SubExprVisitorSrc),
+    ("SubExpr",        SubExprSrc),
     ("Expr",        ExprSrc),
     ("VarExpr",     VarExprSrc),
     ("ThisExpr",    ThisExprSrc),

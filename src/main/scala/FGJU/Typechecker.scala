@@ -72,7 +72,8 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
   }
 
   def getParentType(t: Type): Type = t match {
-    case Top                => throw new Exception("Top has no parent type")
+    case Top                =>
+      throw new Exception("Top has no parent type")
     case TForallTy(_, _, _) => throw new Exception("Forall types have no parent types")
     case TForallK(_,_)      => throw new Exception("Forall types have no parent types")
     case _ =>
@@ -185,7 +186,14 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
       case TForallK(_, _) =>
         throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
-      case _ => assertIsSubtypeOf(getParentType(sub), sup)
+      case _ => {
+        try {
+          assertIsSubtypeOf(getParentType(sub), sup)
+        } catch {
+          case e : Exception =>
+            throw new Exception(s"$sub is not a subtype of $sup", e)
+        }
+      }
     }
   }
 
@@ -286,7 +294,13 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case This => thisType.get
     case New(cNm,gParams,params) =>
       val cd = cEnv(cNm)
-      val (kSubst,tSubst) = instantiateGVars(cd.params,gParams)
+      val (kSubst,tSubst) =
+        try {
+          instantiateGVars(cd.params, gParams)
+        } catch {
+          case e : Exception =>
+            throw new Exception(s"error instantiating $cNm", e)
+        }
 
       // check we have the right number of constructor parameters
       assert(params.length == cd.fields.length, "tcExpr: wrong number of constructor parameters")
@@ -299,7 +313,8 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       foldTypeApps(cNm,gParams)
 
     case Call(e, actualTys, nm, actuals) =>
-      val m = lookupMethodSig(tcExpr(e), nm).get
+      val tyE = tcExpr(e)
+      val m = lookupMethodSig(tyE, nm).get
       assert(
         actualTys.length == m.tParams.length,
         "wrong number of type parameters in call: " + Call(e, actualTys, nm, actuals)
@@ -386,6 +401,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     })
   }
 
+  // precondition: both MethodSigs have been freshened.
   def assertValidMethodSigOverride(subSig : MethodSig, superSig : MethodSig) : Unit = {
     // check the generic parameters
     assert(subSig.tParams.length == superSig.tParams.length,
@@ -408,15 +424,22 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     val tSubst = tRename.mapValues(TVar)
 
     // check covariance of return types
-    tc.assertIsSubtypeOf(substTy(kSubst,tSubst,subSig.retTy), superSig.retTy)
+    tc.assertIsSubtypeOf(
+      normalizeTy(substTy(kSubst,tSubst,subSig.retTy)),
+      normalizeTy(superSig.retTy))
 
     assert(subSig.paramTypes.length == superSig.paramTypes.length,
       s"assertValidMethodSigOverride: overriding methods must have the same number of parameters"
     )
 
     // check contravariance of argument types
-    for ((subT,supT) <- subSig.paramTypes.zip(superSig.paramTypes)) {
-      tc.assertIsSubtypeOf(supT,subT)
+    try {
+      for ((subT, supT) <- subSig.paramTypes.map(substTy(kSubst,tSubst,_)).zip(superSig.paramTypes)) {
+        tc.assertIsSubtypeOf(supT, subT)
+      }
+    } catch {
+      case e : Exception =>
+        throw new Exception(s"contravariance check of method arguments failed\nsubSig.paramTypes=${subSig.paramTypes}\nsuperSig.paramTypes=${superSig.paramTypes}")
     }
   }
 
@@ -489,22 +512,25 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     substTy(kSubst, tSubst, fieldTy)
   }
 
-  case class MethodSig(tParams: List[GVarDecl], retTy: Type, paramTypes: List[Type])
+  case class MethodSig(tParams: List[GVarDecl], retTy: Type, nm : String, paramTypes: List[Type])
+
+  def methodSig(md : MethodDecl) : MethodSig = {
+    MethodSig(md.tParams, md.retTy, md.nm, md.params.map(_.ty))
+  }
 
   def lookupMethodSig(ty: Type, mNm: String): Option[MethodSig] = {
     if(ty == Top) return None
 
     // Don't support field access on quantified types.
     val (nm,params) = unfoldTypeApps(ty)
-    val classDecl = cEnv(nm)
+    val cd = cEnv(nm)
 
-    if (classDecl.params.length != params.length)
+    if (cd.params.length != params.length)
       throw new Exception("lookupMethodSig: wrong number of class type parameters")
-    val (kSubst, tSubst) = instantiateGVars(classDecl.params, params)
-    classDecl.methods.find(m => m.nm == mNm).map({ md =>
-      val sig = MethodSig(md.tParams, md.retTy, md.params.map(_.ty))
-      substMethodSig(kSubst, tSubst, sig)
-    })
+    val (kSubst, tSubst) = instantiateGVars(cd.params, params)
+    cd.methods.find(m => m.nm == mNm)
+      .map(methodSig)
+      .map(substMethodSig(kSubst,tSubst,_))
   }
 
   def substMethodSig(kSubst: Map[Ident, Kind], tSubst: Map[Ident, Type], m: MethodSig): MethodSig = {
@@ -519,6 +545,6 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     })
     val retTy = substTy(kSubst1, tSubst1, m.retTy)
     val paramTypes = m.paramTypes.map(substTy(kSubst1, tSubst1, _))
-    MethodSig(gParams, retTy, paramTypes)
+    MethodSig(gParams, retTy, m.nm, paramTypes)
   }
 }
