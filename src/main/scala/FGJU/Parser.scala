@@ -175,15 +175,15 @@ object parser extends RegexParsers with PackratParsers {
     case Error(msg,_)      => throw new Exception("parse error: " + msg)
   }
 
-  def parseExpr(str: String): Expr = getParseResult(parse(expr, str))
+  def parseExpr(str: String): Expr = getParseResult(parseAll(expr, str))
 
-  def parseClassDecl(str: String): ClassDecl = getParseResult(parse(classDecl,str))
+  def parseClassDecl(str: String): ClassDecl = getParseResult(parseAll(classDecl,str))
 
-  def parseVarDecl(str: String): VarDecl = getParseResult(parse(varDecl, str))
+  def parseVarDecl(str: String): VarDecl = getParseResult(parseAll(varDecl, str))
 
-  def parseMethodDecl(str: String): MethodDecl = getParseResult(parse(methodDecl, str))
+  def parseMethodDecl(str: String): MethodDecl = getParseResult(parseAll(methodDecl, str))
 
-  def parseTy(str: String): Type = getParseResult(parse(ty, str))
+  def parseTy(str: String): Type = getParseResult(parseAll(ty, str))
 
-  def parseKind(str: String): Kind = getParseResult(parse(kind, str))
+  def parseKind(str: String): Kind = getParseResult(parseAll(kind, str))
 }
