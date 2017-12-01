@@ -9,7 +9,9 @@ object parser extends RegexParsers with PackratParsers {
 
   def expr: Parser[Expr] = atomicExpr ~ exprCont ^^ { case e ~ k => k(e) }
 
-  def atomicExpr: Parser[Expr] = thisExpr | newExpr | varExpr | parens(expr) | kindAbsExpr | typeAbsExpr
+  def atomicExpr: Parser[Expr] =
+    thisExpr | newExpr | letKindExpr | letTypeExpr | letExpr |
+    varExpr | parens(expr) | kindAbsExpr | typeAbsExpr
 
   def thisExpr: Parser[Expr] = "this" ^^ (_ => This)
 
@@ -23,6 +25,19 @@ object parser extends RegexParsers with PackratParsers {
 
   def typeAbsExpr: Parser[Expr] =
     (Lambda ~> ident) ~ kindAnnotationOrExtendsClause ~ ("." ~> expr) ^^ { case nm ~ kindOrBound ~ bdy => TAbs(nm, kindOrBound, bdy) }
+
+  def letKindExpr : Parser[Expr] =
+    ("letKind" ~> ident <~ "=") ~ (kind <~ "in") ~ expr ^^ {
+      case nm ~ k ~ e => KLet(nm,k,e)
+    }
+  def letTypeExpr : Parser[Expr] =
+    ("letType" ~> ident <~ ":") ~ (kind <~ "=") ~ (ty <~ "in") ~ expr ^^ {
+      case nm ~ k ~ t ~ e => TLet(nm,k,t,e)
+    }
+  def letExpr : Parser[Expr] =
+    ("let" ~> ident <~ ":") ~ (ty <~ "=") ~ (expr <~ "in") ~ expr ^^ {
+      case nm ~ t ~ e ~ bdy => Let(nm,t,e,bdy)
+    }
 
   def exprCont: Parser[Expr => Expr] =
     (methodOrFieldCont | typeInstantiationCont | kindInstantiationCont).* ^^ {

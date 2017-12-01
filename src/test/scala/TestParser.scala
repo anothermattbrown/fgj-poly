@@ -78,6 +78,22 @@ class TestParser extends FlatSpec with Matchers {
       )
     )
   }
+  "parseExpr" should "parse letKind expressions" in {
+    parser.parseExpr("letKind X = * in foo") should be (
+      KLet("X", Star, Var("foo"))
+    )
+  }
+  "parseExpr" should "parse letType expressions" in {
+    parser.parseExpr("letType T : * = Top in foo") should be (
+      TLet("T", Star, Top, Var("foo"))
+    )
+  }
+  "parseExpr" should "parse let expressions" in {
+    val x = Var("x")
+    parser.parseExpr("let x : Top = x in x") should be (
+      Let("x",Top,x,x)
+    )
+  }
 
   "parseMethodDecl" should "parse method declarations" in {
     val A = TVar("A")
@@ -221,4 +237,6 @@ class TestParser extends FlatSpec with Matchers {
     val C = KVar("C")
     parser.parseTy("A<+B><+C>") should be (TKApp(TKApp(A,B),C))
   }
+
+
 }

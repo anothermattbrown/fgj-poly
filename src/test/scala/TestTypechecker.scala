@@ -116,6 +116,25 @@ class TestTypechecker extends FlatSpec with Matchers {
     val e = parser.parseExpr("new C(new B())")
     an [Exception] should be thrownBy new Typechecker().addClassDecls(List(A,B,C)).tcExpr(e)
   }
+  "tcExpr" should "handle letKind expressions" in {
+    val A = parser.parseClassDecl("class A<+X>{}")
+    val e = parser.parseExpr("letKind K = * in new A<+K>()")
+    val t = parser.parseTy("A<+*>")
+    new Typechecker().addClassDecl(A).tcExpr(e) should be(t)
+  }
+  "tcExpr" should "handle letType expressions" in {
+    val A = parser.parseClassDecl("class A<X:*>{}")
+    val e = parser.parseExpr("letType T : * = Top in new A<T>()")
+    val t = parser.parseTy("A<Top>")
+    new Typechecker().addClassDecl(A).tcExpr(e) should be(t)
+  }
+  "tcExpr" should "handle let expressions" in {
+    val A = parser.parseClassDecl("class A{}")
+    val B = parser.parseClassDecl("class B{A a;}")
+    val e = parser.parseExpr("let a : A = new A() in new B(a)")
+    val t = parser.parseTy("B")
+    new Typechecker().addClassDecls(List(A,B)).tcExpr(e) should be(t)
+  }
 
   "alphaEquivTy" should "be true for syntactically equal types 1" in {
     val A = parser.parseTy("<A> B<A>")

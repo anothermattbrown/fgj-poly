@@ -353,6 +353,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         case e1Ty =>
           throw new Exception("tcExpr/TApp: subexpression does not have forall-type type: " + e1Ty)
       }
+    case KAbs(nm,bdy) => TForallK(nm, addKindVar(nm).tcExpr(bdy))
     case KApp(e1,k) =>
       assertKindIsWellFormed(k)
       tcExpr(e1) match {
@@ -360,6 +361,13 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         case e1Ty =>
           throw new Exception("tcExpr/KApp: subexpression does not have forall-kind type: " + e1Ty)
       }
+    case KLet(nm,k,bdy) => tcExpr(KApp(KAbs(nm,bdy),k))
+    case TLet(nm,k,t,bdy) => tcExpr(TApp(TAbs(nm,Left(k),bdy),t))
+    case Let(nm,t,e,bdy) =>
+      assert(tcType(t) == Star)
+      val eTy = tcExpr(e)
+      assertIsSubtypeOf(eTy,t)
+      addVarDecls(List(VarDecl(nm,t))).tcExpr(bdy)
   }
 
   // require the decl to be in cEnv for recursion

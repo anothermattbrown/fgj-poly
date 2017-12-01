@@ -50,6 +50,12 @@ case class KAbs(nm : Ident, e : Expr) extends Expr
 case class TApp(e:Expr, t : Type) extends Expr
 case class KApp(e:Expr, k : Kind) extends Expr
 
+// syntactic sugar. desugar KLet and TLet using KAbs and TAbs.
+// desugar Let using a built-in Fun class (worry about that later)
+case class KLet(nm:Ident, k:Kind, bdy:Expr) extends Expr
+case class TLet(nm:Ident, k:Kind, t:Type, bdy:Expr) extends Expr
+case class Let(nm:Ident, t:Type, e:Expr, bdy:Expr) extends Expr
+
 case class ClassDecl(params: List[GVarDecl],
                      nm: Ident,
                      superClass: Type,
