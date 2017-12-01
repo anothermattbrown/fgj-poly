@@ -3,6 +3,7 @@ package FGJU
 class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
                   kEnv: Set[Ident] = Set(),
                   tEnv: Map[Ident, Either[Kind, Type]] = Map(),
+                  tDefs : Map[Ident,(Kind,Type)] = Map(),
                   env: Map[Ident, Type] = Map(),
                   thisType: Option[Type] = None) {
   def assertKindIsWellFormed(k: Kind): Unit = k match {
@@ -18,10 +19,16 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       case Left(k) => assertKindIsWellFormed(k)
       case Right(t) => assert(tcType(t) == Star, "addTypeVar: superclass must have kind Star")
     }
-    new Typechecker(cEnv, kEnv, tEnv + (nm -> kindOrBound), env, thisType)
+    new Typechecker(cEnv, kEnv, tEnv + (nm -> kindOrBound), tDefs, env, thisType)
   }
 
-  def addKindVar(nm: Ident): Typechecker = new Typechecker(cEnv, kEnv + nm, tEnv, env, thisType)
+  def addTypeDef(nm:Ident, kind:Kind, defn:Type) : Typechecker = {
+    assertKindIsWellFormed(kind)
+    assert(tcType(defn) == kind)
+    new Typechecker(cEnv, kEnv, tEnv - nm, tDefs + (nm -> (kind,defn)), env, thisType)
+  }
+
+  def addKindVar(nm: Ident): Typechecker = new Typechecker(cEnv, kEnv + nm, tEnv, tDefs, env, thisType)
 
   // subst1 is newer than subst2. apply subst1 to each type in subst2, then extend the resulting
   // substitution with subst1's entries
@@ -79,9 +86,14 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case _ =>
       val (nm,params) = unfoldTypeApps(t)
       if(cEnv contains nm) {
-        val classDecl = cEnv(nm)
-        val (kSubst, tSubst) = instantiateGVars(classDecl.params, params)
-        return substTy(kSubst, tSubst, classDecl.superClass)
+        try {
+          val classDecl = cEnv(nm)
+          val (kSubst, tSubst) = instantiateGVars(classDecl.params, params)
+          return substTy(kSubst, tSubst, classDecl.superClass)
+        } catch {
+          case e :Exception =>
+            throw new Exception(s"error getting parent type of class ${nm.nm}", e)
+        }
       } else if(tEnv contains nm) {
         tEnv(nm) match {
           case Left(k) => return Top
@@ -173,14 +185,36 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case _ => false
   }
 
-  def assertIsSubtypeOf(sub: Type, sup: Type): Unit = {
+  def assertIsSubtypeOf(sub1: Type, sup1: Type): Unit = {
+    // first, expand any letType definitions
+    val tDefsSubst = tDefs.mapValues(_._2)
+    val sub = substTy(Map(), tDefsSubst, sub1)
+    val sup = substTy(Map(), tDefsSubst, sup1)
+
     // precondition: sub and sup are both valid types
     if (alphaEquivTy(sub, sup)) return ()
+    /*
+    if(sub.isInstanceOf[TVar]) {
+      var TVar(nm) = sub.asInstanceOf[TVar]
+      if(tDefs contains nm) {
+        assertIsSubtypeOf(sub,tDefs(nm)._2)
+        return ()
+      }
+    }
+    */
     //if (sup == Top) return ()
     sub match {
+        /*
+      case TVar(nm) if tDefs contains nm =>
+        assertIsSubtypeOf(tDefs(nm)._2,sup)
+        */
       case TVar(nm) if tEnv contains nm =>
         val kindOrBound: Either[Kind, Type] = tEnv(nm)
-        val parent: Type = kindOrBound.getOrElse(throw new Exception("assertSubtypeOf: type variable is not kind *"))
+        val parent: Type = kindOrBound match {
+          case Right(t) => t
+          case Left(Star) => Top
+          case Left(k) => throw new Exception(s"assertSubtypeOf: type variable $nm is not kind *: " + kindOrBound)
+        }
         assertIsSubtypeOf(parent, sup)
       case TForallTy(_, _, _) =>
         throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
@@ -206,7 +240,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         throw new Exception("class " + d.nm + " already declared")
     })
 
-    val tc = new Typechecker(cEnv ++ ds.map(d => d.nm -> d), kEnv, tEnv, env, thisType)
+    val tc = new Typechecker(cEnv ++ ds.map(d => d.nm -> d), kEnv, tEnv, tDefs, env, thisType)
 
     // typecheck last, so all the (mutual) recursion will work
     ds.map(_.nm).foreach(nm =>
@@ -240,10 +274,10 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
 
   def addVarDecls(decls: List[VarDecl]): Typechecker = {
     decls.foreach(d => assert(tcType(d.ty) == Star))
-    new Typechecker(cEnv, kEnv, tEnv, env ++ decls.map(d => d.nm -> d.ty), thisType)
+    new Typechecker(cEnv, kEnv, tEnv, tDefs, env ++ decls.map(d => d.nm -> d.ty), thisType)
   }
 
-  def setThisType(ty: Type): Typechecker = new Typechecker(cEnv, kEnv, tEnv, env, Some(ty))
+  def setThisType(ty: Type): Typechecker = new Typechecker(cEnv, kEnv, tEnv, tDefs, env, Some(ty))
 
   def classKind(d : ClassDecl) : Kind =
     d.params.foldRight[Kind](Star)({
@@ -255,6 +289,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
   // Does kind-checking, but doesn't check subtype constraints on type parameters
   def tcType(t: Type): Kind = t match {
     case Top => Star
+    case TVar(nm) if tDefs contains nm => tDefs(nm)._1
     case TVar(nm) if tEnv contains nm => tEnv(nm) match {
       case Left(k) => k
       case Right(sup) => Star
@@ -314,7 +349,9 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
 
     case Call(e, actualTys, nm, actuals) =>
       val tyE = tcExpr(e)
-      val m = lookupMethodSig(tyE, nm).get
+      val m = lookupMethodSig(tyE, nm).getOrElse(
+        throw new Exception(s"unknown method $nm on type $tyE")
+      )
       assert(
         actualTys.length == m.tParams.length,
         "wrong number of type parameters in call: " + Call(e, actualTys, nm, actuals)
@@ -361,8 +398,11 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         case e1Ty =>
           throw new Exception("tcExpr/KApp: subexpression does not have forall-kind type: " + e1Ty)
       }
-    case KLet(nm,k,bdy) => tcExpr(KApp(KAbs(nm,bdy),k))
-    case TLet(nm,k,t,bdy) => tcExpr(TApp(TAbs(nm,Left(k),bdy),t))
+    case KLet(nm,k,bdy) =>
+      tcExpr(KApp(KAbs(nm,bdy),k))
+    case TLet(nm,k,t,bdy) =>
+      val bdyT = addTypeDef(nm,k,t).tcExpr(bdy)
+      substTy(Map(),Map(nm -> t), bdyT)
     case Let(nm,t,e,bdy) =>
       assert(tcType(t) == Star)
       val eTy = tcExpr(e)
@@ -462,7 +502,12 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       case e : Exception =>
         throw new Exception("tcMethod: return type " + m.retTy + " failed to type-check\n" + e)
     }
-    val tc2 = tc1.addVarDecls(m.params)
+    val tc2 =
+      try { tc1.addVarDecls(m.params) }
+      catch {
+        case e : Exception =>
+          throw new Exception(s"error adding variable declarations for method ${m.nm}", e)
+      }
     val bdyTy = tc2.tcExpr(m.bdy)
     val bdyTyNf = normalizeTy(bdyTy)
     val retTyNf = normalizeTy(m.retTy)

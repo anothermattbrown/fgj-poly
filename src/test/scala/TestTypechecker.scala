@@ -128,6 +128,18 @@ class TestTypechecker extends FlatSpec with Matchers {
     val t = parser.parseTy("A<Top>")
     new Typechecker().addClassDecl(A).tcExpr(e) should be(t)
   }
+  "tcExpr" should "consider let-bound type variables equivalent to their definitions" in {
+    val A = parser.parseClassDecl("class A<X:*>{}")
+    val e = parser.parseExpr(
+      """letType T : * = Top in
+        |let a : A<Top> = new A<T>() in
+        |let b : A<T> = a in
+        |a
+      """.stripMargin
+    )
+    val t = parser.parseTy("A<Top>")
+    new Typechecker().addClassDecl(A).tcExpr(e) should be(t)
+  }
   "tcExpr" should "handle let expressions" in {
     val A = parser.parseClassDecl("class A{}")
     val B = parser.parseClassDecl("class B{A a;}")
