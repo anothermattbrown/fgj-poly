@@ -38,11 +38,11 @@ class TestRepresentation extends FlatSpec with Matchers {
     new Typechecker().addClassDecl(cd).tcClassDecl("KindApp")
   }
 
-  val srcs = List(
+  val classDecls = List(
     ("Sub",         SubSrc),
     ("SubRefl",        SubReflSrc),
     ("SubTrans",       SubTransSrc),
-    ("SubPair",        SubPairSrc),
+    ("SubPair",        SubPairDepthSrc),
     ("SubExprVisitor", SubExprVisitorSrc),
     ("SubExpr",        SubExprSrc),
     ("Expr",        ExprSrc),
@@ -55,6 +55,7 @@ class TestRepresentation extends FlatSpec with Matchers {
     ("BoundExpr",   BoundExprSrc),
     ("Exprs",       ExprsSrc),
     ("Pair",        PairSrc),
+    ("Nil",         NilSrc),
     ("Index",       IndexSrc),
     ("IndexVisitor", IndexVisitorSrc),
     ("IndexZ",       IndexZSrc),
@@ -64,10 +65,12 @@ class TestRepresentation extends FlatSpec with Matchers {
     ("Fun",         FunSrc),
     ("Class",       ClassSrc),
     ("Obj",         ObjSrc),
+    ("FunsNil",     FunsNilSrc),
+    ("FunsCons",    FunsConsSrc),
   )
 
   it should "parse all classes" in {
-    srcs.foreach({case (nm,src) =>
+    classDecls.foreach({case (nm,src) =>
       try {
         parser.parseClassDecl(src)
       } catch {
@@ -78,8 +81,7 @@ class TestRepresentation extends FlatSpec with Matchers {
   }
 
   it should "typecheck all classes" in {
-    val nms = srcs.map(_._1)
-    val cds = srcs.map(p => parser.parseClassDecl(p._2))
+    val cds = classDecls.map(p => parser.parseClassDecl(p._2))
     new Typechecker().addClassDecls(cds)
   }
 }

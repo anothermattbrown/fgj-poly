@@ -14,9 +14,113 @@ object Representation {
   The upcast function works on lists of "bound methods" --
   methods which carry the receiver argument.
 
+  Types are currently encoded by a pair of field and method type.
+  This means types with different names may be encoded as the
+  same type. Probably not a big deal, but we could add
+  a unique identifier (e.g. a type-level nat)
+
+  Classes are embedded into the representation, rather than stored
+  in a separate class environment. Using a class environment would probably
+  require tying another knot, since there's so much mutual recursion between
+  classes.
 
    */
 
+  /* Example 1:
+
+  class A{}
+  class B{ A foo() { return new A(); }}
+  new A()
+
+  Classes:
+    Z = TOP
+    S<Z> = A
+    S<S<Z>> = B
+
+  Encoded classes:
+    TOP = Class<Z,Nil,Nil,Z>
+    A   = Class<S<Z>,Nil,Nil,Z>
+    B   = Class<S<S<Z>>,Nil,BMethods,S<Z>>
+
+  BMethods:
+    Pair<B_foo,Nil>
+
+  B_foo:
+    BoundExpr<Nil,A>
+  */
+
+  // TODO: idea! Since Pair isn't injective, we can't decompose it.
+  // what else can we do? Always pass around decomposed pairs!
+
+  // Since FGJU doesn't have update (of either fields or methods), we
+  // can use the "Recursive Records" encoding described in section
+  // 18.3.2 of Abadi-Cardelli
+
+
+  // try to add type names:
+  // Z = Top, S<Z> = A, S<S<Z>> = B
+  // the name is a phantom type parameter on Obj and Class
+  val Example1b =
+    """let TOP : * = Obj<Z,Nil,Nil> in
+      |let TOPClass : * = Class<Z,Nil,Nil,TOP> in
+      |  new Class<Z,Nil,Nil,TOP> (
+      |    new FunsNil<Obj<Z,Nil,Nil>>(),
+      |    new SubObj<Nil,Nil,Nil,Nil>(new SubRefl<Nil>(), new SubRefl<Nil>())
+      |  )
+      |in
+      |let AFields : * = Nil in
+      |let AMethods : * = Nil in
+      |let ASuper : * = TOP in
+      |let A : * = Obj<S<Z>,Nil,Nil> in
+      |let AClass : Class<Nil,Nil,TOP> =
+      |  new Class<Nil,Nil,TOP>(
+      |    new FunsNil<Obj<Nil,Nil>>(),
+      |    new SubObj<Nil,Nil,Nil,Nil>(new SubRefl<Nil>(), new SubRefl<Nil>())
+      |  )
+      |in
+      |let BFields  : *      = Nil in
+      |let TyB_foo  : * -> * = \B:*. Expr<B,Nil,A> in
+      |let BMethods : * -> * = \B:*. Pair<TyB_foo<B>,Nil> in
+      |let B : * = Obj<Nil,BMethods> in
+      |let B_foo_Env : * = Nil in
+      |let B_foo : TyB_foo<B> =
+      |  new NewExpr<B,B_foo_Env,AFields,AMethods,ASuper>(
+      |    AClass,
+      |    new NilExprs<B,B_foo_Env>()
+      |  )
+      |in
+      |let bFields : BFields = new Nil() in
+      |let bMethods : BMethods<B> =
+      |  new Pair<TyB_foo<B>,Nil>(
+      |    B_foo,
+      |    new Nil()
+      |  )
+      |in
+      |let BClass : Class<BFields,BMethods,A> =
+      |  new Class<BFields,BMethods,A>(bFields, bMethods)
+      |in
+      |new Call
+    """.stripMargin
+
+  val FunsNilSrc =
+    """class FunsNil<In> extends Fun<In, Nil> {
+      |  Nil apply(In o) { return new Nil(); }
+      |}
+    """.stripMargin
+
+  val FunsConsSrc =
+    """class FunsCons<In,OutHd,OutTl>
+      |  extends Fun<In, Pair<OutHd, OutTl>> {
+      |  Fun<In,OutHd> funHd;
+      |  Fun<In,OutTl> funTl;
+      |
+      |  Pair<OutHd,OutTl> apply(In x) {
+      |    return new Pair<OutHd,OutTl>(
+      |      this.funHd.apply(x),
+      |      this.funTl.apply(x)
+      |    );
+      |  }
+      |} """.stripMargin
 
   val SupertypeOfSrc =
     """class SupertypeOf<A,B extends A> {
@@ -63,6 +167,8 @@ object Representation {
         |  B snd;
         |}
       """.stripMargin
+  val NilSrc =
+    """class Nil{}"""
 
   val IndexSrc =
     """class Index<Env,T> {
@@ -135,8 +241,8 @@ object Representation {
       |}
     """.stripMargin
 
-  val SubPairSrc =
-    """class SubPair<A1,A2,B1,B2> extends Sub<Pair<A1,B1>, Pair<A2,B2>> {
+  val SubPairDepthSrc =
+    """class SubPairDepth<A1,B1,A2,B2> extends Sub<Pair<A1,B1>, Pair<A2,B2>> {
       |  Sub<A1,A2> subA;
       |  Sub<B1,B2> subB;
       |  Pair<A2,B2> upcast(Pair<A1,B1> p) {
@@ -145,6 +251,12 @@ object Representation {
       |      this.subB.upcast(p.snd)
       |    );
       |  }
+      |}
+    """.stripMargin
+
+  val SubPairWidthSrc =
+    """class SubPairWidth<A,B> extends Sub<Pair<A,B>, B> {
+      |  B upcast(Pair<A,B> p) { return p.snd; }
       |}
     """.stripMargin
 
@@ -200,20 +312,19 @@ object Representation {
   // Encoding of object values. The self-referential knot is tied simultaneously for all objects.
   // this is a classical technique from the object encoding literature. See the Abadi-Cardelli book.
   val ObjSrc =
-    """class Obj<Fields,Methods,Super> {
+    """class Obj<Fields,Methods> {
       |  Fields fields;
-      |  Fun<Obj<Fields,Methods,Super>, Methods> methods;
-      |  Fun<Fields,Super> upcastFun;
+      |  Fun<Obj<Fields,Methods>, Methods> methods;
       |}
     """.stripMargin
 
   val ClassSrc =
     """class Class<Fields,Methods,Super> {
-      |  Fun<Obj<Fields,Methods,Super>,Methods> methods;
-      |  Fun<Fields,Super> upcastFun;
+      |  Fun<Obj<Fields,Methods>,Methods> methods;
+      |  Fun<Obj<Fields,Methods>,Super> upcastFun;
       |
-      |  Obj<Fields,Methods,Super> newInstance(Fields fields) {
-      |    return new Obj<Fields,Methods,Super>(fields, this.methods, this.upcastFun);
+      |  Obj<Fields,Methods> newInstance(Fields fields) {
+      |    return new Obj<Fields,Methods>(fields, this.methods);
       |  }
       |}
     """.stripMargin
@@ -243,7 +354,7 @@ object Representation {
 
   val GetFieldSrc =
     """class GetFieldExpr<This,Env,Fields,Methods,Super,T> extends Expr<This,Env,T> {
-      |  Expr<This,Env,Obj<Fields,Methods,Super>> e;
+      |  Expr<This,Env,Obj<Fields,Methods>> e;
       |  Index<Fields,T> fld;
       |  <Ret:* -> *> Ret<T> accept(ExprVisitor<This,Env,T,Ret> v) { return v.<Fields,Methods,Super>getField(this.e, this.fld); }
       |}
@@ -251,7 +362,7 @@ object Representation {
 
   val CallMethodSrc =
     """class CallMethodExpr<This,Env,Fields,Methods,Super,Args,T> extends Expr<This,Env,T> {
-      |  Expr<This,Env,Obj<Fields,Methods,Super>> e;
+      |  Expr<This,Env,Obj<Fields,Methods>> e;
       |  Index<Methods,BoundExpr<Args,T>> method;
       |  Exprs<This,Env,Args> args;
       |  <Ret : * -> *> Ret<T> accept(ExprVisitor<This,Env,T,Ret> v) {
@@ -261,13 +372,13 @@ object Representation {
     """.stripMargin
 
   val NewObjectSrc =
-    """class NewObject<This,Env,Fields,Methods,Super> extends Expr<This,Env,Obj<Fields,Methods,Super>> {
+    """class NewObject<This,Env,Fields,Methods,Super> extends Expr<This,Env,Obj<Fields,Methods>> {
       |  Class<Fields,Methods,Super> _class;
       |  Exprs<This,Env,Fields> fields;
       |
-      |  <Ret : * -> *> Ret<Obj<Fields,Methods,Super>> accept(ExprVisitor<This,Env,Obj<Fields,Methods,Super>,Ret> v) {
+      |  <Ret : * -> *> Ret<Obj<Fields,Methods>> accept(ExprVisitor<This,Env,Obj<Fields,Methods>,Ret> v) {
       |    return v.<Fields,Methods,Super>newObject(
-      |      new Refl<Obj<Fields,Methods,Super>>(),
+      |      new Refl<Obj<Fields,Methods>>(),
       |      this._class,
       |      this.fields
       |    );
@@ -278,8 +389,24 @@ object Representation {
   // expression with the receiver type obscured (via an existential)
   val BoundExprSrc =
     """class BoundExpr<Env,T> {
-      |  <Ret:* -> *> Ret<T> accept(<This> ExprVisitor<This,Env,T,Ret> v) {
+      |  <Ret> Ret accept(BoundExprVisitor<Env,T,Ret> v) {
       |    return this.<Ret>accept(v);
+      |  }
+      |}
+    """.stripMargin
+  val BoundExprVisitorSrc =
+    """class BoundExprVisitor<Env,T,Ret> {
+      |  <This> Ret boundExpr(This _this, Expr<This,Env,T> e) {
+      |    return this.<This>boundExpr(_this,e);
+      |  }
+      |}
+    """.stripMargin
+  val SomeBoundExprSrc =
+    """class SomeBoundExpr<This,Env,T> extends BoundExpr<Env,T> {
+      |  This _this;
+      |  Expr<This,Env,T> e;
+      |  <Ret> Ret accept(BoundExprVisitor<Env,T,Ret> v) {
+      |    return v.<Ret>boundExpr(this._this,this.e);
       |  }
       |}
     """.stripMargin
@@ -299,14 +426,14 @@ object Representation {
         |
         |  <Fields,Methods,Super>
         |  Ret<T>
-        |  getField(Expr<This,Env,Obj<Fields,Methods,Super>> e,
+        |  getField(Expr<This,Env,Obj<Fields,Methods>> e,
         |           Index<Fields, T> fld) {
         |    return this.<Fields,Methods,Super>getField(e,fld);
         |  }
         |
         |  <Fields,Methods,Super,As>
         |  Ret<T>
-        |  callMethod(Expr<This,Env,Obj<Fields,Methods,Super>> e,
+        |  callMethod(Expr<This,Env,Obj<Fields,Methods>> e,
         |             Index<Methods,BoundExpr<As,T>> method,
         |             Exprs<This,Env,As> as) {
         |    return this.<Fields,Methods,Super,As>callMethod(e,method,as);
@@ -314,7 +441,7 @@ object Representation {
         |
         |  <Fields,Methods,Super>
         |  Ret<T>
-        |  newObject(Eq<T,Obj<Fields,Methods,Super>> eq,
+        |  newObject(Eq<T,Obj<Fields,Methods>> eq,
         |            Class<Fields,Methods,Super> _class,
         |            Exprs<This,Env,Fields> fields) {
         |    return this.<Fields,Methods,Super>newObject(eq,_class,fields);
@@ -322,7 +449,7 @@ object Representation {
         |
         |  <Fields,Methods>
         |  Ret<T>
-        |  upcast(Expr<This,Env,Obj<Fields,Methods,T>> e) {
+        |  upcast(Expr<This,Env,Obj<Fields,Methods>> e) {
         |    return this.<Fields,Methods>upcast(e);
         |  }
         |
