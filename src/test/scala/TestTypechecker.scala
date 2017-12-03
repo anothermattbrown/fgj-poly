@@ -70,6 +70,27 @@ class TestTypechecker extends FlatSpec with Matchers {
       tc.MethodSig(List(), tyA, "a", List())
     )
   }
+  "lookupMethodSig" should "avoid capture of generics" in {
+    val cF = parser.parseClassDecl("class F<T>{}")
+    val cA = parser.parseClassDecl(
+      """class A<T> {
+        |  <F:* -> *> F<T> a(F<T> x) { return x; }
+        |}
+      """.stripMargin
+    )
+    val tc = new Typechecker().addClassDecls(List(cF,cA))
+    val tyA = parser.parseTy("A<F<Top>>")
+    val tyFTop = parser.parseTy("F<Top>")
+    val identF = Ident("F",1)
+    val tyFFTop = TTApp(TVar(identF),tyFTop)
+    val sigActual = tc.lookupMethodSig(tyA, "a").get
+    val sigExpected = tc.MethodSig(
+          List(GVarDecl(identF, GAType(Left(KArr(Star,Star))))),
+          tyFFTop,
+          "a",
+          List(tyFFTop))
+    tc.assertAlphaEquivMethodSig(sigActual,sigExpected)
+  }
 
   "getParentType" should "handle generic classes" in {
     val cInt    = parser.parseClassDecl("class Int{}")
@@ -168,6 +189,12 @@ class TestTypechecker extends FlatSpec with Matchers {
   "alphaEquivTy" should "be true for syntactically equal types 2" in {
     val A = parser.parseTy("B<+A>")
     new Typechecker().alphaEquivTy(A,A) should be(true)
+  }
+
+  "alphaEquivK" should "rename kind variables" in {
+    val k1 = parser.parseKind("<X> X -> *")
+    val k2 = parser.parseKind("<Y> Y -> *")
+    new Typechecker().alphaEquivK(k1,k2) should be(true)
   }
 
   // TODO: test typechecking method bodies

@@ -66,8 +66,8 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
   def getParentType(t: Type): Type = t match {
     case Top                =>
       throw new Exception("Top has no parent type")
-    case TForallTy(_, _, _) => throw new Exception("Forall types have no parent types")
-    case TForallK(_,_)      => throw new Exception("Forall types have no parent types")
+    case TForallTy(_, _, _) => Top // throw new Exception("Forall types have no parent types")
+    case TForallK(_,_)      => Top // throw new Exception("Forall types have no parent types")
     case _ =>
       val (nm,params) = unfoldTypeApps(t)
       if(cEnv contains nm) {
@@ -170,6 +170,27 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case _ => false
   }
 
+  def assertAlphaEquivMethodSig(m1 : MethodSig, m2 : MethodSig) : Unit = {
+    assert(m1.nm == m2.nm)
+    assert(m1.tParams.length == m2.tParams.length)
+    assert(m1.paramTypes.length == m2.paramTypes.length)
+
+    def mkForall(gParams : List[GVarDecl], t:Type) : Type = {
+      gParams.foldLeft[Type](t)({
+        case (t,GVarDecl(nm,GAKind)) => TForallK(nm,t)
+        case (t,GVarDecl(nm,GAType(kindOrBound))) => TForallTy(nm,kindOrBound,t)
+      })
+    }
+
+    assert(alphaEquivTy(mkForall(m1.tParams,m1.retTy),
+                        mkForall(m2.tParams,m2.retTy)))
+
+    for((t1,t2) <- m1.paramTypes.zip(m2.paramTypes)) {
+      assert(alphaEquivTy(mkForall(m1.tParams,t1),
+                          mkForall(m2.tParams,t2)))
+    }
+  }
+
   def assertIsSubtypeOf(sub1: Type, sup1: Type): Unit = {
     // first, expand any letType definitions
     val tDefsSubst = tDefs.mapValues(_._2)
@@ -201,10 +222,12 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
           case Left(k) => throw new Exception(s"assertSubtypeOf: type variable $nm is not kind *: " + kindOrBound)
         }
         assertIsSubtypeOf(parent, sup)
+      /*
       case TForallTy(_, _, _) =>
         throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
       case TForallK(_, _) =>
         throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
+      */
       case _ => {
         try {
           assertIsSubtypeOf(getParentType(sub), sup)
@@ -460,7 +483,8 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       case ((kRename,tRename), (GVarDecl(nm1,GAKind), GVarDecl(nm2,GAKind))) =>
         (kRename + (nm1 -> nm2), tRename)
       case ((kRename,tRename), (GVarDecl(nm1,GAType(kb1)), GVarDecl(nm2,GAType(kb2)))) =>
-        assert(alphaEquivKindOrBound(kb1,kb2,kRename,tRename))
+        if(!alphaEquivKindOrBound(kb1,kb2,tRename,kRename))
+          throw new Exception("kind or bounds not alpha equivalent")
         (kRename, tRename + (nm1 -> nm2))
     })
 
@@ -587,14 +611,24 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
   }
 
   def substMethodSig(kSubst: Map[Ident, Kind], tSubst: Map[Ident, Type], m: MethodSig): MethodSig = {
+    /*
     val gParams = m.tParams.map({
       case GVarDecl(nm, GAKind) => GVarDecl(nm, GAKind)
       case GVarDecl(nm, GAType(Left(k))) => GVarDecl(nm, GAType(Left(substKind(kSubst, k))))
       case GVarDecl(nm, GAType(Right(t))) => GVarDecl(nm, GAType(Right(substTy(kSubst, tSubst, t))))
     })
-    val (kSubst1, tSubst1) = gParams.foldLeft[(Map[Ident, Kind], Map[Ident, Type])](kSubst, tSubst)({
-      case ((kSubst, tSubst), GVarDecl(nm, GAKind)) => (kSubst - nm, tSubst)
-      case ((kSubst, tSubst), GVarDecl(nm, GAType(_))) => (kSubst, tSubst - nm)
+    */
+    val (gParams,kSubst1, tSubst1) = m.tParams.foldLeft[(List[GVarDecl], Map[Ident, Kind], Map[Ident, Type])](List(), kSubst, tSubst)({
+      case ((decls, kSubst, tSubst), GVarDecl(nm, GAKind)) =>
+        val nm1 = freshen(nm)
+        (decls ++ List(GVarDecl(nm1,GAKind)), kSubst + (nm -> KVar(nm1)), tSubst)
+      case ((decls, kSubst, tSubst), GVarDecl(nm, GAType(ann))) =>
+        val nm1 = freshen(nm)
+        val ann1 = ann match {
+          case Left(k) => Left(substKind(kSubst,k))
+          case Right(t) => Right(substTy(kSubst,tSubst,t))
+        }
+        (decls ++ List(GVarDecl(nm1,GAType(ann1))),kSubst, tSubst + (nm -> TVar(nm1)))
     })
     val retTy = substTy(kSubst1, tSubst1, m.retTy)
     val paramTypes = m.paramTypes.map(substTy(kSubst1, tSubst1, _))
