@@ -74,7 +74,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         try {
           val classDecl = cEnv(nm)
           val (kSubst, tSubst) = instantiateGVars(classDecl.params, params)
-          return substTy(kSubst, tSubst, classDecl.superClass)
+          return normalizeTy(substTy(kSubst, tSubst, classDecl.superClass))
         } catch {
           case e :Exception =>
             throw new Exception(s"error getting parent type of class ${nm.nm}", e)
