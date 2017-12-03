@@ -173,13 +173,70 @@ object NewRepresentation {
       |  new IndexZ<TyB_foo,Nil>()
       |in
       |let aExpr : Expr<TOP,Nil,A> =
-      |  new CallExpr<TOP,Nil,BFields,BMethods,Nil,A>(
+      |  new CallExpr<TOP,Nil,BFields,BMethods,TyB_foo,Nil,A>(
       |    bExpr,
       |    B_foo_idx,
+      |    new NoInstantiation<TyB_foo>(),
       |    new NilExprs<TOP,Nil>()
       |  )
       |in
       |aExpr
+    """.stripMargin
+
+  // how should we represent instantiations of generic methods?
+  // this version is deep: it allows us to inspect each instantiation.
+  // so we can do this if we need to, but it seems to add little value.
+  val GenericMethodInstantiationSrc =
+    """class GenericMethodInstantiation<T> {
+      |  <R> R visit(GenericMethodInstantiationVisitor<T,R> v) {
+      |    return this.<R>visit(v);
+      |  }
+      |}
+    """.stripMargin
+
+  val GenericMethodInstantiationVisitorSrc =
+    """class GenericMethodInstantiationVisitor<T,R> {
+      |  <+K,M:K -> *,A:K>
+      |  R instType(Eq<T,M<A>> eq,
+      |             GenericMethodInstantiation<<A:K>M<A>> m) {
+      |    return this.<+K,M,A>instType(eq,m);
+      |  }
+      |
+      |  <M:<K>*, +K>
+      |  R instKind(Eq<T, M<+K>> eq,
+      |             GenericMethodInstantiation<<+K>M<K>> m) {
+      |    return this.<M,+K>instKind(eq,m);
+      |  }
+      |
+      |  R genericType(T t) { return this.genericType(t); }
+      |}
+    """.stripMargin
+
+  // here's a shallow representation of generic method instantiation.
+  val InstantiationSrc =
+    """class Instantiation<P,I> {
+      |  I instantiate(P p) {
+      |    return this.instantiate(p);
+      |  }
+      |}
+    """.stripMargin
+
+  val NoInstantiationSrc =
+    """class NoInstantiation<T> extends Instantiation<T,T> {
+      |  T instantiation(T p) { return p; }
+      |}
+    """.stripMargin
+
+  val TypeInstantiationSrc =
+    """class TypeInstantiation<+K, T:K->*, A:K> extends Instantiation<<X:K>T<X>, T<A>> {
+      |  T<A> instantiate(<X:K>T<X> p) { return p<A>; }
+      |}
+    """.stripMargin
+
+  val KindInstantiationSrc =
+    """class KindInstantiation<T:<X>*,+K> extends Instantiation<<+X>T<+X>,T<+K>> {
+      |  T<+K> instantiate(<+X>T<+X> p) { return p<+K>; }
+      |}
     """.stripMargin
 
   val ClassSrc =
@@ -323,12 +380,13 @@ object NewRepresentation {
     """.stripMargin
 
   val CallExprSrc =
-    """class CallExpr<This,Env,Fields,Methods,Args,T> extends Expr<This,Env,T> {
+    """class CallExpr<This,Env,Fields,Methods,M,Args,T> extends Expr<This,Env,T> {
       |  Expr<This,Env,Pair<Fields,Methods>> e;
-      |  Index<Methods,BoundExpr<Args,T>> method;
+      |  Index<Methods,M> method;
+      |  Instantiation<M,BoundExpr<Args,T>> inst;
       |  Exprs<This,Env,Args> args;
       |  <Ret> Ret accept(ExprVisitor<This,Env,T,Ret> v) {
-      |    return v.<Fields,Methods,Args>call(this.e,this.method,this.args);
+      |    return v.<Fields,Methods,M,Args>call(this.e,this.method,this.inst,this.args);
       |  }
       |}
     """.stripMargin
@@ -348,12 +406,13 @@ object NewRepresentation {
       |    return this.<Fields,Methods>field(e,fld);
       |  }
       |
-      |  <Fields,Methods,As>
+      |  <Fields,Methods,M,As>
       |  Ret
       |  call(Expr<This,Env,Pair<Fields,Methods>> e,
-      |       Index<Methods,BoundExpr<As,T>> method,
+      |       Index<Methods,M> method,
+      |       Instantiation<M,BoundExpr<As,T>> inst,
       |       Exprs<This,Env,As> as) {
-      |    return this.<Fields,Methods,As>call(e,method,as);
+      |    return this.<Fields,Methods,M,As>call(e,method,inst,as);
       |  }
       |
       |  <Fields,Methods,Super>
@@ -470,9 +529,10 @@ object NewRepresentation {
       |      );
       |  }
       |
-      |  <Fields,Methods,As>
+      |  <Fields,Methods,M,As>
       |  T call(Expr<This,Env,Pair<Fields,Methods>> e,
-      |         Index<Methods,BoundExpr<As,T>> method,
+      |         Index<Methods,M> method,
+      |         Instantiation<M,BoundExpr<As,T>> inst,
       |         Exprs<This,Env,As> as) {
       |    return
       |      let p : Pair<Fields,Methods> =
@@ -482,7 +542,9 @@ object NewRepresentation {
       |          )
       |        )
       |      in
-      |      let be : BoundExpr<As,T> = method.apply(p.snd) in
+      |      let be : BoundExpr<As,T> =
+      |        inst.instantiate(method.apply(p.snd))
+      |      in
       |      be.<T>accept(
       |        new EvalBoundExpr<As,T>(
       |          as.<As>accept(
