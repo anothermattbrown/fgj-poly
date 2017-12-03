@@ -32,7 +32,9 @@ class TestNewRepresentation extends FlatSpec with Matchers {
     ("FunsNil",     FunsNilSrc),
     ("FunsCons",    FunsConsSrc),
     ("Exprs",       ExprsSrc),
+    ("ExprsVisitor", ExprsVisitorSrc),
     ("NilExprs",    NilExprsSrc),
+    ("ConsExprs",   ConsExprsSrc),
     ("BoundExpr",   BoundExprSrc),
     ("BoundExprVisitor", BoundExprVisitorSrc),
     ("SomeBoundExpr", SomeBoundExprSrc),
@@ -41,6 +43,10 @@ class TestNewRepresentation extends FlatSpec with Matchers {
     ("Constructor",   ConstructorSrc),
     ("BindMethodsNil", BindMethodsNilSrc),
     ("BindMethodsCons", BindMethodsConsSrc),
+    ("EvalExpr",        EvalExprSrc),
+    ("EvalExprs",       EvalExprsSrc),
+    ("EvalBoundExpr", EvalBoundExprSrc),
+
   )
 
   it should "parse all classes" in {

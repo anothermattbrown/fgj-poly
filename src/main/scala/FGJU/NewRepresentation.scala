@@ -173,7 +173,7 @@ object NewRepresentation {
       |  new IndexZ<TyB_foo,Nil>()
       |in
       |let aExpr : Expr<TOP,Nil,A> =
-      |  new CallExpr<TOP,Nil,BFields,BMethods,BSuper,Nil,A>(
+      |  new CallExpr<TOP,Nil,BFields,BMethods,Nil,A>(
       |    bExpr,
       |    B_foo_idx,
       |    new NilExprs<TOP,Nil>()
@@ -185,7 +185,7 @@ object NewRepresentation {
   val ClassSrc =
     """class Class<Fields,Methods,Super> {
       |  Fun<Lazy<Pair<Fields,Methods>>, Methods> methods;
-      |  Sub<Pair<Fields,Methods>, Super> upcast;
+      |  Sub<Pair<Fields,Methods>, Super> sub;
       |}
     """.stripMargin
 
@@ -257,17 +257,53 @@ object NewRepresentation {
 
   val ExprsSrc =
     """class Exprs<This,Env,Ts> {
-      |}
-    """.stripMargin
-  val NilExprsSrc =
-    """class NilExprs<This,Env> extends Exprs<This,Env,Nil> {
+      |  <R> R accept(ExprsVisitor<This,Env,Ts,R> v) {
+      |    return this.<R>accept(v);
+      |  }
       |}
     """.stripMargin
 
+  val ExprsVisitorSrc =
+    """class ExprsVisitor<This,Env,Ts,R> {
+      |  R nilExprs(Eq<Ts,Nil> eq) {
+      |    return this.nilExprs(eq);
+      |  }
+      |
+      |  <Hd,Tl> R consExprs(Eq<Ts,Pair<Hd,Tl>> eq,
+      |                      Expr<This,Env,Hd> hd,
+      |                      Exprs<This,Env,Tl> tl) {
+      |    return this.<Hd,Tl>consExprs(eq,hd,tl);
+      |  }
+      |}
+    """.stripMargin
+
+  val NilExprsSrc =
+    """class NilExprs<This,Env> extends Exprs<This,Env,Nil> {
+      |  <R> R accept(ExprsVisitor<This,Env,Nil,R> v) {
+      |    return v.nilExprs(new Refl<Nil>());
+      |  }
+      |}
+    """.stripMargin
+
+  val ConsExprsSrc =
+    """class ConsExprs<This,Env,Hd,Tl>
+      |  extends Exprs<This,Env,Pair<Hd,Tl>> {
+      |
+      |  Expr<This,Env,Hd> hd;
+      |  Exprs<This,Env,Tl> tl;
+      |
+      |  <R> R accept(ExprsVisitor<This,Env,Pair<Hd,Tl>,R> v) {
+      |    return v.<Hd,Tl>consExprs(
+      |      new Refl<Pair<Hd,Tl>>(),
+      |      this.hd, this.tl
+      |    );
+      |  }
+      |}
+    """.stripMargin
 
   val ExprSrc =
     """class Expr<This,Env,T> {
-      |  <Ret:* -> *> Ret<T> accept(ExprVisitor<This,Env,T,Ret> v) { return this.<Ret>accept(v); }
+      |  <Ret> Ret accept(ExprVisitor<This,Env,T,Ret> v) { return this.<Ret>accept(v); }
       |}
     """.stripMargin
 
@@ -276,7 +312,7 @@ object NewRepresentation {
       |  Class<Fields,Methods,Super> _class;
       |  Exprs<This,Env,Fields> fields;
       |
-      |  <Ret : * -> *> Ret<Pair<Fields,Methods>> accept(ExprVisitor<This,Env,Pair<Fields,Methods>,Ret> v) {
+      |  <Ret> Ret accept(ExprVisitor<This,Env,Pair<Fields,Methods>,Ret> v) {
       |    return v.<Fields,Methods,Super>_new(
       |      new Refl<Pair<Fields,Methods>>(),
       |      this._class,
@@ -287,73 +323,75 @@ object NewRepresentation {
     """.stripMargin
 
   val CallExprSrc =
-    """class CallExpr<This,Env,Fields,Methods,Super,Args,T> extends Expr<This,Env,T> {
+    """class CallExpr<This,Env,Fields,Methods,Args,T> extends Expr<This,Env,T> {
       |  Expr<This,Env,Pair<Fields,Methods>> e;
       |  Index<Methods,BoundExpr<Args,T>> method;
       |  Exprs<This,Env,Args> args;
-      |  <Ret : * -> *> Ret<T> accept(ExprVisitor<This,Env,T,Ret> v) {
-      |    return v.<Fields,Methods,Super,Args>call(this.e,this.method,this.args);
+      |  <Ret> Ret accept(ExprVisitor<This,Env,T,Ret> v) {
+      |    return v.<Fields,Methods,Args>call(this.e,this.method,this.args);
       |  }
       |}
     """.stripMargin
 
 
   val ExprVisitorSrc =
-    """class ExprVisitor<This,Env,T,Ret : * -> *> {
-      |  <Env1> Ret<T> var(Sub<Env,Env1> subEnv, Index<Env1,T> idx) {
+    """class ExprVisitor<This,Env,T,Ret> {
+      |  <Env1> Ret var(Sub<Env,Env1> subEnv, Index<Env1,T> idx) {
       |    return this.<Env1>var(subEnv,idx);
       |  }
-      |  Ret<T> _this(Sub<This,T> sub) { return this._this(sub); }
+      |  Ret _this(Sub<This,T> sub) { return this._this(sub); }
       |
-      |  <Fields,Methods,Super>
-      |  Ret<T>
+      |  <Fields,Methods>
+      |  Ret
       |  field(Expr<This,Env,Pair<Fields,Methods>> e,
       |        Index<Fields, T> fld) {
-      |    return this.<Fields,Methods,Super>field(e,fld);
+      |    return this.<Fields,Methods>field(e,fld);
       |  }
       |
-      |  <Fields,Methods,Super,As>
-      |  Ret<T>
+      |  <Fields,Methods,As>
+      |  Ret
       |  call(Expr<This,Env,Pair<Fields,Methods>> e,
       |       Index<Methods,BoundExpr<As,T>> method,
       |       Exprs<This,Env,As> as) {
-      |    return this.<Fields,Methods,Super,As>call(e,method,as);
+      |    return this.<Fields,Methods,As>call(e,method,as);
       |  }
       |
       |  <Fields,Methods,Super>
-      |  Ret<T>
+      |  Ret
       |  _new(Eq<T,Pair<Fields,Methods>> eq,
       |       Class<Fields,Methods,Super> _class,
       |       Exprs<This,Env,Fields> fields) {
       |    return this.<Fields,Methods,Super>_new(eq,_class,fields);
       |  }
       |
-      |  <Fields,Methods>
-      |  Ret<T>
-      |  upcast(Expr<This,Env,Pair<Fields,Methods>> e) {
-      |    return this.<Fields,Methods>upcast(e);
+      |  <Fields,Methods,Super>
+      |  Ret
+      |  upcast(Eq<T,Super> eq,
+      |         Class<Fields,Methods,Super> _class,
+      |         Expr<This,Env,Pair<Fields,Methods>> e) {
+      |    return this.<Fields,Methods,Super>upcast(eq,_class,e);
       |  }
       |
       |  <+X, F : X -> *>
-      |  Ret<T>
+      |  Ret
       |  tAbs(Eq<T, <A:X> F<A>> eq, <A:X> Expr<This,Env,F<A>> e) {
       |    return this.<+X,F>tAbs(eq,e);
       |  }
       |
       |  <+X, F : X -> *, A:X>
-      |  Ret<T>
+      |  Ret
       |  tApp(Eq<T, F<A>> eq, Expr<This,Env,<B:X>F<B>> e) {
       |    return this.<+X,F,A>tApp(eq,e);
       |  }
       |
       |  <F : <K>*>
-      |  Ret<T>
+      |  Ret
       |  kAbs(Eq<T, <+K>F<+K>> eq, <+K> Expr<This,Env,F<+K>> e) {
       |    return this.<F>kAbs(eq,e);
       |  }
       |
       |  <F : <K>*, +K>
-      |  Ret<T>
+      |  Ret
       |  kApp(Eq<T, F<+K>> eq, Expr<This,Env,<+K>F<+K>> e) {
       |    return this.<F,+K>kApp(eq,e);
       |  }
@@ -392,4 +430,178 @@ object NewRepresentation {
       |}
     """.stripMargin
 
+  val EvalBoundExprSrc =
+    """class EvalBoundExpr<Env,T> extends BoundExprVisitor<Env,T,T> {
+      |  Env env;
+      |  <This> T boundExpr(This _this, Expr<This,Env,T> e) {
+      |    return e.<T>accept(
+      |      new EvalExpr<This,Env,T>(
+      |        _this, this.env
+      |      )
+      |    );
+      |  }
+      |}
+    """.stripMargin
+
+  val EvalExprSrc =
+    """class EvalExpr<This,Env,T> extends ExprVisitor<This,Env,T,T> {
+      |  This _this;
+      |  Env env;
+      |
+      |  <Env1> T var(Sub<Env,Env1> subEnv, Index<Env1, T> idx) {
+      |    return idx.apply(subEnv.upcast(this.env));
+      |  }
+      |
+      |  T _this(Sub<This,T> sub) {
+      |    return sub.upcast(this._this);
+      |  }
+      |
+      |  <Fields,Methods>
+      |  T
+      |  field(Expr<This,Env,Pair<Fields,Methods>> e,
+      |        Index<Fields,T> idx) {
+      |    return
+      |      idx.apply(
+      |        e.<Pair<Fields,Methods>>accept(
+      |          new EvalExpr<This,Env,Pair<Fields,Methods>>(
+      |            this._this, this.env
+      |          )
+      |        ).fst
+      |      );
+      |  }
+      |
+      |  <Fields,Methods,As>
+      |  T call(Expr<This,Env,Pair<Fields,Methods>> e,
+      |         Index<Methods,BoundExpr<As,T>> method,
+      |         Exprs<This,Env,As> as) {
+      |    return
+      |      let p : Pair<Fields,Methods> =
+      |        e.<Pair<Fields,Methods>>accept(
+      |          new EvalExpr<This,Env,Pair<Fields,Methods>>(
+      |            this._this, this.env
+      |          )
+      |        )
+      |      in
+      |      let be : BoundExpr<As,T> = method.apply(p.snd) in
+      |      be.<T>accept(
+      |        new EvalBoundExpr<As,T>(
+      |          as.<As>accept(
+      |            new EvalExprs<This,Env,As>(
+      |              this._this,this.env
+      |            )
+      |          )
+      |        )
+      |      );
+      |  }
+      |
+      |  <Fields,Methods,Super>
+      |  T
+      |  _new(Eq<T,Pair<Fields,Methods>> eq,
+      |       Class<Fields,Methods,Super> _class,
+      |       Exprs<This,Env,Fields> fields) {
+      |    return eq.<\T.T>toLeft(
+      |      new Constructor<Fields,Methods>(
+      |        fields.<Fields>accept(
+      |          new EvalExprs<This,Env,Fields>(
+      |            this._this, this.env
+      |          )
+      |        ),
+      |        _class.methods
+      |      ).force()
+      |    );
+      |  }
+      |
+      |  <Fields,Methods,Super>
+      |  T
+      |  upcast(Eq<T,Super> eq,
+      |         Class<Fields,Methods,Super> _class,
+      |         Expr<This,Env,Pair<Fields,Methods>> e) {
+      |    return eq.<\T.T>toLeft(
+      |      _class.sub.upcast(
+      |        e.<Pair<Fields,Methods>>accept(
+      |          new EvalExpr<This,Env,Pair<Fields,Methods>>(
+      |            this._this, this.env
+      |          )
+      |        )
+      |      )
+      |    );
+      |  }
+      |
+      |  <+X, F:X -> *>
+      |  T
+      |  tAbs(Eq<T, <A:X> F<A>> eq, <A:X> Expr<This,Env,F<A>> e) {
+      |    return eq.<\T.T>toLeft(
+      |      /\A:X.
+      |      e<A>.<F<A>>accept(
+      |        new EvalExpr<This,Env,F<A>>(
+      |          this._this, this.env
+      |        )
+      |      )
+      |    );
+      |  }
+      |
+      |  <+X, F:X -> *, A:X>
+      |  T
+      |  tApp(Eq<T, F<A>> eq, Expr<This,Env,<B:X>F<B>> e) {
+      |    return eq.<\T.T>toLeft(
+      |      e.<<B:X>F<B>>accept(
+      |        new EvalExpr<This,Env,<B:X>F<B>>(
+      |          this._this, this.env
+      |        )
+      |      )<A>
+      |    );
+      |  }
+      |
+      |  <F:<K>*>
+      |  T
+      |  kAbs(Eq<T, <+K>F<+K>> eq, <+K> Expr<This,Env,F<+K>> e) {
+      |    return eq.<\T.T>toLeft(
+      |      /\+K.
+      |      e<+K>.<F<+K>>accept(
+      |        new EvalExpr<This,Env,F<+K>>(
+      |          this._this, this.env
+      |        )
+      |      )
+      |    );
+      |  }
+      |
+      |  <F:<K>*, +X>
+      |  T
+      |  kApp(Eq<T, F<+X>> eq, Expr<This,Env,<+X>F<+X>> e) {
+      |    return eq.<\T.T>toLeft(
+      |      e.<<+X>F<+X>>accept(
+      |        new EvalExpr<This,Env,<+X>F<+X>>(
+      |          this._this, this.env
+      |        )
+      |      )<+X>
+      |    );
+      |  }
+      |}
+    """.stripMargin
+
+  val EvalExprsSrc =
+    """class EvalExprs<This,Env,Ts> extends ExprsVisitor<This,Env,Ts,Ts> {
+      |  This _this;
+      |  Env env;
+      |
+      |  Ts nilExprs(Eq<Ts,Nil> eq) {
+      |    return eq.<\T:*.T>toLeft(new Nil());
+      |  }
+      |
+      |  <Hd,Tl> Ts consExprs(Eq<Ts,Pair<Hd,Tl>> eq,
+      |                       Expr<This,Env,Hd> hd,
+      |                       Exprs<This,Env,Tl> tl) {
+      |    return eq.<\T:*.T>toLeft(
+      |      new Pair<Hd,Tl>(
+      |        hd.<Hd>accept(
+      |          new EvalExpr<This,Env,Hd>(this._this, this.env)
+      |        ),
+      |        tl.<Tl>accept(
+      |          new EvalExprs<This,Env,Tl>(this._this, this.env)
+      |        )
+      |      )
+      |    );
+      |  }
+      |}
+    """.stripMargin
 }
