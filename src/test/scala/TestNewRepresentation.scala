@@ -52,6 +52,18 @@ class TestNewRepresentation extends FlatSpec with Matchers {
     ("TypeInstantiation", TypeInstantiationSrc),
     ("KindInstantiation", KindInstantiationSrc),
 
+    ("Val", ValSrc),
+    ("ValVisitorSrc", ValVisitorSrc),
+    ("Vals", ValsSrc),
+    ("ValsVisitorSrc", ValsVisitorSrc),
+    ("NilVals", NilValsSrc),
+    ("ConsVals", ConsValsSrc),
+    ("EvalExprVal", EvalExprValSrc),
+    ("EvalExprsVals", EvalExprsValsSrc),
+
+    ("PolyIndex", PolyIndexSrc),
+    ("PolyIndexZ", PolyIndexZSrc),
+    ("PolyIndexS", PolyIndexSSrc),
   )
 
   it should "parse all classes" in {
