@@ -8,9 +8,10 @@ import FGJU.Representation
 // can't derive that T1=S1 and T2=S2. This problem will arise if we try to use
 // an index for Pair<T1,T2> to lookup an Exprs<Pair<T1,T2>>.
 // The solution is to make Indices polymorphic: see PolyIndex
+// This in turn requires we make Fields have kind (* -> *) -> *
 
 
-object NewRepresentation {
+object Representation2 {
   // Old version where I made Methods a type function,
   // to untie the recursive knot. This doesn't work with
   // SubObj though. So instead Methods is a list of BoundExprs.

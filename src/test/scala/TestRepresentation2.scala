@@ -1,8 +1,8 @@
-import FGJU.NewRepresentation._
+import FGJU.Representation2._
 import FGJU.{Typechecker, parser}
 import org.scalatest.{FlatSpec, Matchers}
 
-class TestNewRepresentation extends FlatSpec with Matchers {
+class TestRepresentation2 extends FlatSpec with Matchers {
 
   val classDecls = List(
     ("Sub",            SubSrc),
