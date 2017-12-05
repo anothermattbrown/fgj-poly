@@ -142,7 +142,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case (KForall(nm1,bdy1), KForall(nm2,bdy2)) => alphaEquivK(bdy1,bdy2,kMap + (nm1 -> nm2))
   }
 
-  def alphaEquivKindOrBound(kb1 : Either[Kind,Type],kb2 : Either[Kind,Type],tMap : Map[Ident,Ident],kMap : Map[Ident,Ident]) : Boolean =
+  def alphaEquivKindOrBound(kb1 : Either[Kind,Type],kb2 : Either[Kind,Type],tMap : Map[Ident,Ident] = Map(),kMap : Map[Ident,Ident] = Map()) : Boolean =
     (kb1,kb2) match {
       case (Left(Star),Right(Top)) => true
       case (Right(Top),Left(Star)) => true
@@ -222,12 +222,24 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
           case Left(k) => throw new Exception(s"assertSubtypeOf: type variable $nm is not kind *: " + kindOrBound)
         }
         assertIsSubtypeOf(parent, sup)
-      /*
-      case TForallTy(_, _, _) =>
-        throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
-      case TForallK(_, _) =>
-        throw new Exception("Forall types are not subtypes of any type\n sub: " + sub + "\n sup: " + sup)
-      */
+      case TForallTy(nm1, kindOrBound1, bdySub) => sup match {
+        case Top => ()
+        case TForallTy(nm2, kindOrBound2, bdySup) =>
+          assert(alphaEquivKindOrBound(kindOrBound1,kindOrBound2))
+          val nm=freshen(nm1)
+          val bdySub1 = substTy(Map(),Map(nm1 -> TVar(nm)), bdySub)
+          val bdySup1 = substTy(Map(),Map(nm2 -> TVar(nm)), bdySup)
+          addTypeVar(nm,kindOrBound1).assertIsSubtypeOf(bdySub1, bdySup1)
+      }
+      case TForallK(nm1, bdySub) => sup match {
+        case Top => ()
+        case TForallK(nm2,bdySup) =>
+          val nm = freshen(nm1)
+          val bdySub1 = substTy(Map(nm1 -> KVar(nm)), Map(), bdySub)
+          val bdySup1 = substTy(Map(nm2 -> KVar(nm)), Map(), bdySup)
+          addKindVar(nm).assertIsSubtypeOf(bdySub1, bdySup1)
+      }
+
       case _ => {
         try {
           assertIsSubtypeOf(getParentType(sub), sup)
@@ -351,16 +363,19 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       // now check the types of constructor parameters
       cd.fields.map(fd => (fd._1,substTy(kSubst,tSubst,fd._2))).zip(params).foreach({
         case ((nm,t), e) =>
+          val eTy = tcExpr(e)
+          val fTy = normalizeTy(t)
           try {
-            assertIsSubtypeOf(tcExpr(e), t)
+            assertIsSubtypeOf(eTy, fTy)
           } catch {
             case exn : Exception =>
               throw new Exception(
                 s"""constructor parameter is not a subtype of the declared field type.
                    |Class name: ${cNm.nm}
                    |Field name: $nm
-                   |Field type: $t
+                   |Field type: $fTy
                    |Parameter expr: $e
+                   |Parameter type: $eTy
                  """.stripMargin,
                 exn
               )
