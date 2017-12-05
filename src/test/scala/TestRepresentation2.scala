@@ -11,8 +11,8 @@ class TestRepresentation2 extends FlatSpec with Matchers {
     ("SubPairDepth",        SubPairDepthSrc),
     ("SubPairWidth",        SubPairWidthSrc),
     ("Expr",        ExprSrc),
-    /*
     ("VarExpr",     VarExprSrc),
+    /*
     ("ThisExpr",    ThisExprSrc),
     ("GetFieldExpr", GetFieldSrc),
     ("CallMethodExpr", CallMethodSrc),
@@ -39,6 +39,8 @@ class TestRepresentation2 extends FlatSpec with Matchers {
     ("BoundExprVisitor", BoundExprVisitorSrc),
     ("SomeBoundExpr", SomeBoundExprSrc),
     ("ExprBinder",    ExprBinderSrc),
+    ("TPolyExprBinder", TPolyExprBinderSrc),
+    ("KPolyExprBinder", KPolyExprBinderSrc),
     ("Lazy",          LazySrc),
     ("Constructor",   ConstructorSrc),
     ("BindMethodsNil", BindMethodsNilSrc),
@@ -85,6 +87,7 @@ class TestRepresentation2 extends FlatSpec with Matchers {
   val examples : List[(String,String)] = List(
     ("Example1", Example1),
     ("Example2", Example2),
+    ("Example3", Example3),
   )
 
   it should "typecheck all examples" in {

@@ -12,55 +12,6 @@ import FGJU.Representation
 
 
 object Representation2 {
-  // Old version where I made Methods a type function,
-  // to untie the recursive knot. This doesn't work with
-  // SubObj though. So instead Methods is a list of BoundExprs.
-  // Have to express the knot-tying somewhere else.
-  val Example1Old =
-  """letType TOP : * = Obj<Nil,FunsNil> in
-    |letType TOPClass : * = Class<Nil,FunsNil,TOP> in
-    |  new Class<Nil,FunsNil,TOP> (
-    |    new FunsNil<Obj<Nil,FunsNil>>(),
-    |    new SubObj<Nil,Nil,Nil,Nil>(new SubRefl<Nil>(), new SubRefl<Nil>())
-    |  )
-    |in
-    |letType AFields : * = Nil in
-    |letType AMethods : * = Nil in
-    |letType ASuper : * = TOP in
-    |letType A : * = Obj<Nil,Nil> in
-    |letType AClass : Class<Nil,Nil,TOP> =
-    |  new Class<Nil,Nil,TOP>(
-    |    new FunsNil<Obj<Nil,Nil>>(),
-    |    new SubObj<Nil,Nil,Nil,Nil>(new SubRefl<Nil>(), new SubRefl<Nil>())
-    |  )
-    |in
-    |letType BFields  : *      = Nil in
-    |letType TyB_foo  : * -> * = \B:*. Expr<B,Nil,A> in
-    |letType BMethods : * -> * = \B:*. Pair<TyB_foo<B>,Nil> in
-    |letType B : * = Obj<Nil,BMethods> in
-    |letType B_foo_Env : * = Nil in
-    |let B_foo : TyB_foo<B> =
-    |  new NewExpr<B,B_foo_Env,AFields,AMethods,ASuper>(
-    |    AClass,
-    |    new NilExprs<B,B_foo_Env>()
-    |  )
-    |in
-    |let bFields : BFields = new Nil() in
-    |let bMethods : BMethods<B> =
-    |  new Pair<TyB_foo<B>,Nil>(
-    |    B_foo,
-    |    new Nil()
-    |  )
-    |in
-    |let BClass : Class<BFields,BMethods,A> =
-    |  new Class<BFields,BMethods,A>(bFields, bMethods)
-    |in
-    |new NewExpr<TOP,Nil,AFields,AMethods,ASuper>(
-    |  AClass,
-    |  new NilExprs<TOP,Nil>()
-    |)
-  """.stripMargin
-
   /*  class A{}
       class B{ A foo() { return new A(); }}
       new A()
@@ -191,6 +142,94 @@ object Representation2 {
       |in
       |aExpr
     """.stripMargin
+
+
+  /*  class A{}
+      class B{
+        <A> A id(A a) { return a; }
+      }
+      new B().<A>id(new A())
+  */
+  val Example3 =
+    """letType TOP : * = Pair<Nil,Nil> in
+      |let TOPClass : Class<Nil,Nil,TOP> =
+      |  new Class<Nil,Nil,TOP> (
+      |    new BindMethodsNil<TOP>(),
+      |    new SubRefl<Pair<Nil,Nil>>()
+      |  )
+      |in
+      |letType AFields : * = Nil in
+      |letType AMethods : * = Nil in
+      |letType ASuper : * = TOP in
+      |letType A : * = Pair<Nil,Nil> in
+      |let AClass : Class<Nil,Nil,TOP> =
+      |  new Class<Nil,Nil,TOP>(
+      |    new BindMethodsNil<A>(),
+      |    new SubRefl<Pair<Nil,Nil>>()
+      |  )
+      |in
+      |letType BSuper   : * = TOP in
+      |letType BFields  : * = Nil in
+      |letType TyB_id  : * =
+      |  <T> BoundExpr<Pair<T,Nil>,T>
+      |in
+      |letType BMethods : * = Pair<TyB_id,Nil> in
+      |letType B : * = Pair<Nil,BMethods> in
+      |let B_foo : Fun<Lazy<B>,TyB_id> =
+      |  new TPolyExprBinder<B,+*,\A.Pair<A,Nil>,\A.A,A>(
+      |    /\A.
+      |    new VarExpr<B,Pair<A,Nil>,Pair<A,Nil>,A>(
+      |      new SubRefl<Pair<A,Nil>>(),
+             new IndexZ<A,Nil>()
+      |    )
+      |  )
+      |in
+      |let bFields : BFields = new Nil() in
+      |let bMethods : Fun<Lazy<B>,BMethods> =
+      |  new BindMethodsCons<B,TyB_id,Nil>(
+      |    B_foo,
+      |    new BindMethodsNil<B>()
+      |  )
+      |in
+      |let bUpcast : Sub<B,TOP> =
+      |  new SubPairDepth<BFields,BMethods,Nil,Nil>(
+      |    new SubRefl<Nil>(),
+      |    new SubPairWidth<TyB_id,Nil>()
+      |  )
+      |in
+      |let BClass : Class<BFields,BMethods,TOP> =
+      |  new Class<BFields,BMethods,A>(bMethods,bUpcast)
+      |in
+      |let bExpr : Expr<TOP,Nil,B> =
+      |  new NewExpr<TOP,Nil,BFields,BMethods,BSuper>(
+      |    BClass,
+      |    new NilExprs<TOP,Nil>()
+      |  )
+      |in
+      |let B_id_idx : Index<BMethods,TyB_id> =
+      |  new IndexZ<TyB_id,Nil>()
+      |in
+      |let newAExpr : Expr<TOP,Nil,A> =
+      |  new NewExpr<TOP,Nil,AFields,AMethods,ASuper>(
+      |    AClass,
+      |    new NilExprs<TOP,Nil>()
+      |  )
+      |in
+      |let callExpr : Expr<TOP,Nil,A> =
+      |  new CallExpr<TOP,Nil,BFields,BMethods,TyB_id,Pair<A,Nil>,A>(
+      |    bExpr,
+      |    B_id_idx,
+      |    new TypeInstantiation<+*,\T.BoundExpr<Pair<T,Nil>,T>, A>(),
+      |    new ConsExprs<TOP,Nil,A,Nil>(
+      |      newAExpr,
+      |      new NilExprs<TOP,Nil>()
+      |    )
+      |  )
+      |in
+      |callExpr
+    """.stripMargin
+
+
 
   val ValSrc =
     """class Val<T> {
@@ -483,6 +522,15 @@ object Representation2 {
       |}
     """.stripMargin
 
+  val VarExprSrc =
+    """class VarExpr<This,Env,Env1,T> extends Expr<This,Env,T> {
+      |  Sub<Env,Env1> subEnv;
+      |  Index<Env1,T> idx;
+      |  <Ret> Ret accept(ExprVisitor<This,Env,T,Ret> v) {
+      |    return v.<Env1>var(this.subEnv, this.idx);
+      |  }
+      |}
+    """.stripMargin
   val NewExprSrc =
     """class NewExpr<This,Env,Fields,Methods,Super> extends Expr<This,Env,Pair<Fields,Methods>> {
       |  Class<Fields,Methods,Super> _class;
@@ -599,6 +647,28 @@ object Representation2 {
       |  }
       |}
     """.stripMargin
+
+  val TPolyExprBinderSrc =
+    """class TPolyExprBinder<This,+K,Env:K -> *,T:K -> *,A:K>
+      |  extends Fun<Lazy<This>,<A:K> BoundExpr<Env<A>,T<A>>> {
+      |  <A:K> Expr<This,Env<A>,T<A>> e;
+      |  (<A:K> BoundExpr<Env<A>,T<A>>) apply(Lazy<This> _this) {
+      |    return /\A:K. new SomeBoundExpr<This,Env<A>,T<A>>(_this, this.e<A>);
+      |  }
+      |}
+    """.stripMargin
+
+  val KPolyExprBinderSrc =
+    """class KPolyExprBinder<This,Env:<K>*,T:<K>*,+K>
+      |  extends Fun<Lazy<This>,<+K> BoundExpr<Env<+K>,T<+K>>> {
+      |  <+K> Expr<This,Env<+K>,T<+K>> e;
+      |  (<+K> BoundExpr<Env<+K>,T<+K>>) apply(Lazy<This> _this) {
+      |    return /\+K. new SomeBoundExpr<This,Env<+K>,T<+K>>(_this, this.e<+K>);
+      |  }
+      |}
+    """.stripMargin
+
+
   val ExprBinderSrc =
     """class ExprBinder<This,Env,T> extends Fun<Lazy<This>,BoundExpr<Env,T>> {
       |  Expr<This,Env,T> e;
@@ -607,6 +677,7 @@ object Representation2 {
       |  }
       |}
     """.stripMargin
+
 
   val EvalBoundExprSrc =
     """class EvalBoundExpr<Env,T> extends BoundExprVisitor<Env,T,T> {
