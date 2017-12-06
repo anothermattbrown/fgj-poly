@@ -66,6 +66,10 @@ class TestRepresentation2 extends FlatSpec with Matchers {
     ("PolyIndex", PolyIndexSrc),
     ("PolyIndexZ", PolyIndexZSrc),
     ("PolyIndexS", PolyIndexSSrc),
+
+    ("Cast", CastSrc),
+    ("CastVisitor", CastVisitorSrc),
+    ("EvalCast", EvalCastSrc),
   )
 
   it should "parse all classes" in {

@@ -624,6 +624,53 @@ object Representation2 {
       |}
     """.stripMargin
 
+  val CastSrc =
+    """class Cast<Sub,Sup> {
+      |  <R> R accept(CastVisitor<Sub,Sup,R> v) {
+      |    return this.<R>accept(v);
+      |  }
+      |}
+    """.stripMargin
+
+  val CastVisitorSrc =
+    """class CastVisitor<Sub,Sup,R> {
+      |  <Fields,Methods>
+      |  R cast(Eq<Sub,Pair<Fields,Methods>> eq,
+      |         Class<Fields,Methods,Sup> _class) {
+      |    return this.<Fields,Methods>cast(eq,_class);
+      |  }
+      |
+      |  <Fields,Methods,Parent>
+      |  R casts(Eq<Sub,Pair<Fields,Methods>> eq,
+      |          Class<Fields,Methods,Parent> _class,
+      |          Cast<Parent,Sup> cast) {
+      |    return this.<Fields,Methods,Parent>casts(eq,_class,cast);
+      |  }
+      |}
+    """.stripMargin
+
+  val EvalCastSrc =
+    """class EvalCast<S,T> extends CastVisitor<S,T,Sub<S,T>> {
+      |  <Fields,Methods>
+      |  Sub<S,T> cast(Eq<S,Pair<Fields,Methods>> eq,
+      |                Class<Fields,Methods,T> _class) {
+      |    return eq.<\X.Sub<X,T>>toLeft(_class.sub);
+      |  }
+      |
+      |  <Fields,Methods,Parent>
+      |  Sub<S,T> casts(Eq<S,Pair<Fields,Methods>> eq,
+      |                 Class<Fields,Methods,Parent> _class,
+      |                 Cast<Parent,T> cast) {
+      |    return new SubTrans<S,Parent,T>(
+      |      eq.<\X.Sub<X,Parent>>toLeft(_class.sub),
+      |      cast.<Sub<Parent,T>>accept(
+      |        new EvalCast<Parent,T>()
+      |      )
+      |    );
+      |  }
+      |}
+    """.stripMargin
+
   val BoundExprSrc =
     """class BoundExpr<Env,T> {
       |  <Ret> Ret accept(BoundExprVisitor<Env,T,Ret> v) {
@@ -633,7 +680,9 @@ object Representation2 {
     """.stripMargin
   val BoundExprVisitorSrc =
     """class BoundExprVisitor<Env,T,Ret> {
-      |  <This> Ret boundExpr(This _this, Expr<This,Env,T> e) {
+      |  <This>
+      |  Ret
+      |  boundExpr(This _this, Expr<This,Env,T> e) {
       |    return this.<This>boundExpr(_this,e);
       |  }
       |}
@@ -644,6 +693,18 @@ object Representation2 {
       |  Expr<This,Env,T> e;
       |  <Ret> Ret accept(BoundExprVisitor<Env,T,Ret> v) {
       |    return v.<This>boundExpr(this._this.force(),this.e);
+      |  }
+      |}
+    """.stripMargin
+
+  val UpcastBoundExprSrc =
+    """class UpcastBoundExpr<SubEnv,SupEnv,Sub,Sup>
+      |  extends BoundExprVisitor<BoundExpr<SupEnv,Sub>, BoundExpr<SubEnv,Sup>> {
+      |
+      |  Sub<SubEnv,SupEnv> subEnv;
+      |  Sub<Sub,Sup> sub;
+      |  <This> BoundExpr<SubEnv,Sup>(Lazy<This> _this, Expr<This,SupEnv,Sub> e) {
+      |
       |  }
       |}
     """.stripMargin
