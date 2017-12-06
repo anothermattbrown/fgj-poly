@@ -326,7 +326,12 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       KArr(k1,k2)
     case TTApp(t1,t2) => (tcType(t1), tcType(t2)) match {
       case (KArr(a1,r),a2) if a1 == a2 => r
-      case (k1,k2) => throw new Exception("tcType TTApp error: k1=" + k1 + ", k2=" + k2)
+      case (k1,k2) => throw new Exception(s"""tcType TTApp error
+                                             |t1 = $t1
+                                             |k1 = $k1
+                                             |t2 = $t2
+                                             |k2 = $k2
+                                             |""".stripMargin)
     }
     case TKAbs(nm,bdy) => KForall(nm, addKindVar(nm).tcType(bdy))
     case TKApp(t1,k) =>
@@ -382,7 +387,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
           }
       })
 
-      foldTypeApps(cNm,gParams)
+      normalizeTy(foldTypeApps(cNm,gParams))
 
     case Call(e, actualTys, nm, actuals) =>
       val tyE = tcExpr(e)
@@ -405,11 +410,11 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
             assertIsSubtypeOf(sub, sup)
           } catch {
             case e : Exception =>
-              throw new Exception(s"method call argument subtype check failed", e)
+              throw new Exception(s"method call $nm argument subtype check failed", e)
           }
       }
 
-      substTy(kSubst, tSubst, m.retTy)
+      normalizeTy(substTy(kSubst, tSubst, m.retTy))
     case TAbs(nm,kindOrBound,bdy) =>
       kindOrBound match {
         case Left(k) => assertKindIsWellFormed(k)
@@ -546,7 +551,12 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         case e : Exception =>
           throw new Exception(s"error adding variable declarations for method ${m.nm}", e)
       }
-    val bdyTy = tc2.tcExpr(m.bdy)
+    val bdyTy =
+      try { tc2.tcExpr(m.bdy) }
+      catch {
+        case e : Exception =>
+          throw new Exception(s"error typechecking method ${m.nm} body", e)
+      }
     val bdyTyNf = normalizeTy(bdyTy)
     val retTyNf = normalizeTy(m.retTy)
     try {
@@ -554,7 +564,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     } catch {
       case e : Exception =>
         e.printStackTrace()
-        throw new Exception("tcMethod: error typechecking method body: " + e)
+        throw new Exception(s"tcMethod: error typechecking method ${m.nm} body: " + e)
     }
   }
 
