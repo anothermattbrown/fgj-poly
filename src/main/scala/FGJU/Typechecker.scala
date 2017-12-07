@@ -463,7 +463,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       }
     })
 
-    assert(tcOuter.tcType(c.superClass) == Star, "tcClassDecl: superClass must have kind *")
+    assert(tcOuter.tcType(c.superClass) == Star, s"tcClassDecl: superClass ${c.superClass} does not have kind *")
 
     val tcInner = tcOuter.setThisType(foldTypeApps(c.nm, c.params.map({
       case GVarDecl(nm, GAKind) => Left(KVar(nm))

@@ -229,6 +229,8 @@ object Representation2 {
       |callExpr
     """.stripMargin
 
+  // TODO example involving upcasting a polymorphic method
+
 
 
   val ValSrc =
@@ -440,6 +442,35 @@ object Representation2 {
   val FunsNilSrc = Representation.FunsNilSrc
   val FunsConsSrc = Representation.FunsConsSrc
 
+  // Subtype witnesses for quantified types
+  val SubForallTySrc =
+    """class SubForallTy<+K, SubT:K -> *, SupT:K -> *>
+      |  extends Sub<<A:K>SubT<A>, <A:K>SupT<A>> {
+      |
+      |  <A:K> Sub<SubT<A>, SupT<A>> sub;
+      |
+      |  (<A:K>SupT<A>) upcast(<A:K>SubT<A> x) {
+      |    return
+      |      /\A:K.
+      |      this.sub<A>.upcast(x<A>);
+      |  }
+      |}
+    """.stripMargin
+
+  val SubForallKSrc =
+    """class SubForallK<SubT:<X>*, SupT:<X>*>
+      |  extends Sub<<+X>SubT<+X>, <+X>SupT<+X>> {
+      |
+      |  <+X> Sub<SubT<+X>, SupT<+X>> sub;
+      |
+      |  (<+X>SupT<+X>) upcast(<+X>SubT<+X> x) {
+      |    return
+      |      /\+X.
+      |      this.sub<+X>.upcast(x<+X>);
+      |  }
+      |}
+    """.stripMargin
+
   val PolyIndexSrc =
     "class PolyIndex<F:* -> *, Tup : (* -> *) -> *, T> extends Fun<Tup<F>, F<T>> {}"
   val PolyIndexZSrc =
@@ -558,6 +589,10 @@ object Representation2 {
       |}
     """.stripMargin
 
+
+  // TODO generalize cast. subtype is not always a class, since we
+  // have subtyping rules for quantified types too. So we should
+  // allow casting based on an arbitrary Sub<Subtype,Supertype> witness.
 
   val ExprVisitorSrc =
     """class ExprVisitor<This,Env,T,Ret> {
@@ -680,10 +715,13 @@ object Representation2 {
     """.stripMargin
   val BoundExprVisitorSrc =
     """class BoundExprVisitor<Env,T,Ret> {
-      |  <This>
+      |  <This,SupEnv,SubT>
       |  Ret
-      |  boundExpr(This _this, Expr<This,Env,T> e) {
-      |    return this.<This>boundExpr(_this,e);
+      |  boundExpr(Lazy<This> _this,
+      |            Expr<This,SupEnv,SubT> e,
+      |            Sub<Env,SupEnv> subEnv,
+      |            Sub<SubT, T> subT) {
+      |    return this.<This,SupEnv,SubT>boundExpr(_this,e,subEnv,subT);
       |  }
       |}
     """.stripMargin
@@ -692,19 +730,53 @@ object Representation2 {
       |  Lazy<This> _this;
       |  Expr<This,Env,T> e;
       |  <Ret> Ret accept(BoundExprVisitor<Env,T,Ret> v) {
-      |    return v.<This>boundExpr(this._this.force(),this.e);
+      |    return v.<This,Env,T>boundExpr(
+      |      this._this,
+      |      this.e,
+      |      new SubRefl<Env>(),
+      |      new SubRefl<T>()
+      |    );
       |  }
       |}
     """.stripMargin
 
+  val SubBoundExprSrc =
+  """class SubBoundExpr<This,SupEnv,SubT,Env,T> extends BoundExpr<Env,T> {
+    |  Lazy<This> _this;
+    |  Expr<This,SupEnv,SubT> e;
+    |  Sub<Env,SupEnv> subEnv;
+    |  Sub<SubT,T> subT;
+    |
+    |  <Ret> Ret accept(BoundExprVisitor<Env,T,Ret> v) {
+    |    return v.<This,SupEnv,SubT>boundExpr(
+    |      this._this,
+    |      this.e,
+    |      this.subEnv,
+    |      this.subT
+    |    );
+    |  }
+    |}
+  """.stripMargin
+
+
   val UpcastBoundExprSrc =
-    """class UpcastBoundExpr<SubEnv,SupEnv,Sub,Sup>
-      |  extends BoundExprVisitor<BoundExpr<SupEnv,Sub>, BoundExpr<SubEnv,Sup>> {
+    """class UpcastBoundExpr<SubEnv,SupEnv,SubT,SupT>
+      |  extends BoundExprVisitor<SupEnv, SubT, BoundExpr<SubEnv,SupT>> {
       |
       |  Sub<SubEnv,SupEnv> subEnv;
-      |  Sub<Sub,Sup> sub;
-      |  <This> BoundExpr<SubEnv,Sup>(Lazy<This> _this, Expr<This,SupEnv,Sub> e) {
+      |  Sub<SubT,SupT> subT;
       |
+      |  <This,SupEnv2,SubT2>
+      |  BoundExpr<SubEnv,SupT>
+      |  boundExpr(Lazy<This> _this,
+      |            Expr<This,SupEnv2,SubT2> e,
+      |            Sub<SupEnv,SupEnv2> subEnv2,
+      |            Sub<SubT2,SubT> subT2) {
+      |    return new SubBoundExpr<This,SupEnv2,SubT2,SubEnv,SupT>(
+      |      _this, e,
+      |      new SubTrans<SubEnv,SupEnv,SupEnv2>(this.subEnv,subEnv2),
+      |      new SubTrans<SubT2,SubT,SupT>(subT2,this.subT)
+      |    );
       |  }
       |}
     """.stripMargin
@@ -743,10 +815,19 @@ object Representation2 {
   val EvalBoundExprSrc =
     """class EvalBoundExpr<Env,T> extends BoundExprVisitor<Env,T,T> {
       |  Env env;
-      |  <This> T boundExpr(This _this, Expr<This,Env,T> e) {
-      |    return e.<T>accept(
-      |      new EvalExpr<This,Env,T>(
-      |        _this, this.env
+      |
+      |  <This,SupEnv,SubT>
+      |  T
+      |  boundExpr(Lazy<This> _this,
+      |            Expr<This,SupEnv,SubT> e,
+      |            Sub<Env,SupEnv> subEnv,
+      |            Sub<SubT,T> subT) {
+      |    return subT.upcast(
+      |      e.<SubT>accept(
+      |        new EvalExpr<This,SupEnv,SubT>(
+      |          _this.force(),
+      |          subEnv.upcast(this.env)
+      |        )
       |      )
       |    );
       |  }

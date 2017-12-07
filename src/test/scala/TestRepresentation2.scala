@@ -10,6 +10,8 @@ class TestRepresentation2 extends FlatSpec with Matchers {
     ("SubTrans",       SubTransSrc),
     ("SubPairDepth",        SubPairDepthSrc),
     ("SubPairWidth",        SubPairWidthSrc),
+    ("SubForallTy",         SubForallTySrc),
+    ("SubForallK",          SubForallKSrc),
     ("Expr",        ExprSrc),
     ("VarExpr",     VarExprSrc),
     /*
@@ -38,6 +40,8 @@ class TestRepresentation2 extends FlatSpec with Matchers {
     ("BoundExpr",   BoundExprSrc),
     ("BoundExprVisitor", BoundExprVisitorSrc),
     ("SomeBoundExpr", SomeBoundExprSrc),
+    ("SubBoundExpr", SubBoundExprSrc),
+    ("UpcastBoundExpr", UpcastBoundExprSrc),
     ("ExprBinder",    ExprBinderSrc),
     ("TPolyExprBinder", TPolyExprBinderSrc),
     ("KPolyExprBinder", KPolyExprBinderSrc),
