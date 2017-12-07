@@ -442,6 +442,30 @@ object Representation2 {
   val FunsNilSrc = Representation.FunsNilSrc
   val FunsConsSrc = Representation.FunsConsSrc
 
+  val ObjSrc =
+    """class Obj<Fields,Methods,Super> {
+      |  <SubFields,SubMethods,SubSuper,R>
+      |  R accept(ObjVisitor<Fields,Methods,Super,
+      |                      SubFields,SubMethods,SubSuper,
+      |                      R> v) {
+      |    return this.<SubFields,SubMethods,SubSuper,R>accept(v);
+      |  }
+      |}
+    """.stripMargin
+
+  val ObjVisitorSrc =
+    """class ObjVisitor<Fields,Methods,Super,
+      |                 SubFields,SubMethods,SubSuper, R> {
+      |  R visitObj(Class<SubFields,SubMethods,SubSuper> subClass,
+      |             Class<Fields,Methods,Super> _class,
+      |             ObjCast<SubFields,SubMethods,SubSuper,
+      |                     Fields,Methods,Super> cast,
+      |             SubFields subFields) {
+      |    return this.visitObj(subClass, _class, cast, subFields);
+      |  }
+      |}
+    """.stripMargin
+
   // Subtype witnesses for quantified types
   val SubForallTySrc =
     """class SubForallTy<+K, SubT:K -> *, SupT:K -> *>
@@ -702,6 +726,67 @@ object Representation2 {
       |        new EvalCast<Parent,T>()
       |      )
       |    );
+      |  }
+      |}
+    """.stripMargin
+
+  val ObjCastSrc =
+    """class ObjCast<SubFs,SubMs,SubS,SupFs,SupMs,SupS> {
+      |  <R> R accept(ObjCastVisitor<SubFs,SubMs,SubS,SupFs,SupMs,SupS,R> v) {
+      |    return this.<R>accept(v);
+      |  }
+      |}
+    """.stripMargin
+
+  val ObjCastVisitorSrc =
+    """class ObjCastVisitor<SubFs,SubMs,SubS,SupFs,SupMs,SupS,R> {
+      |  R refl(Eq<SubFs,SupFs> eqFs,
+      |         Eq<SubMs,SupMs> eqMs,
+      |         Eq<SubS,SupS> eqSs) {
+      |    return this.castRefl(eqFs,eqMs,eqSs);
+      |  }
+      |
+      |  <MidFs,MidMs,MidS>
+      |  R trans(Eq<SubS,Obj<MidFs,MidMs,MidS>> eq,
+      |          Class<SubFs,SubMs,Obj<MidFs,MidMs,MidS>> _class,
+      |          ObjCast<MidFs,MidMs,MidS,SupFs,SupMs,SupS> cast) {
+      |    return this.<MidFs,MidMs,MidS>casts(eq,_class,cast);
+      |  }
+      |}
+    """.stripMargin
+
+  val EvalObjCastSrc =
+    """class EvalObjCast<SubFs,SubMs,SubS,SupFs,SupMs,SupS>
+      |  extends ObjCastVisitor<SubFs,SubMs,SubS,SupFs,SupMs,SupS,
+      |          Fun<Pair<SubFs,SubMs>, Pair<SupFs,SupMs>>> {
+      |  Fun<Pair<SubFs,SubMs>, Pair<SupFs,SupMs>>
+      |  refl(Eq<SubFs,SupFs> eqFs,
+      |       Eq<SubMs,SupMs> eqMs,
+      |       Eq<SubS,SupS> eqSs) {
+      |    return
+      |      eqFs.<\T.Fun<Pair<SubFs,SubMs>, Pair<T,SupMs>>>toRight(
+      |      eqMs.<\T.Fun<Pair<SubFs,SubMs>, Pair<SubFs,T>>>toRight(
+      |        new IdFun<Pair<SubFs,SubMs>>()
+      |      ));
+      |  }
+      |
+      |  <MidFs,MidMs,MidS>
+      |  Fun<Pair<SubFs,SubMs>, Pair<SupFs,SupMs>>
+      |  trans(Eq<SubS,Obj<MidFs,MidMs,MidS>> eq,
+      |        Class<SubFs,SubMs,Pair<MidFs,MidMs>> _class,
+      |        ObjCast<MidFs,MidMs,MidS,SupFs,SupMs,SupS> cast) {
+      |    return
+      |      let f1 : Fun<Pair<SubFs,SubMs>, Pair<MidFs,MidMs>> =
+      |        _class.sub
+      |      in
+      |      let f2 : Fun<Pair<MidFs,MidMs>, Pair<SupFs,SupMs>> =
+      |        cast.<Fun<Pair<MidFs,MidMs>, Pair<SupFs,SupMs>>>accept(
+      |          new EvalObjCast<MidFs,MidMs,MidS,SupFs,SupMs,SupS>()
+      |        )
+      |      in
+      |      new ComposeFun<Pair<SubFs,SubMs>, Pair<MidFs,MidMs>, Pair<SupFs,SupMs>>(
+      |        f1,f2
+      |      );
       |  }
       |}
     """.stripMargin
