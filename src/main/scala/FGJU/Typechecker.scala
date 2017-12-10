@@ -4,11 +4,12 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
                   kEnv: Set[Ident] = Set(),
                   tEnv: Map[Ident, Either[Kind, Type]] = Map(),
                   tDefs : Map[Ident,(Kind,Type)] = Map(),
+                  kDefs : Map[Ident,Kind] = Map(),
                   env: Map[Ident, Type] = Map(),
                   thisType: Option[Type] = None) {
   def assertKindIsWellFormed(k: Kind): Unit = k match {
     case Star => ()
-    case KVar(nm) if kEnv contains nm => ()
+    case KVar(nm) if (kEnv contains nm) || (kDefs contains nm) => ()
     case KVar(nm) => throw new Exception("kind variable not in scope " + nm)
     case KArr(k1, k2) => List(k1, k2).foreach(assertKindIsWellFormed)
     case KForall(nm, k) => addKindVar(nm).assertKindIsWellFormed(k)
@@ -19,18 +20,27 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
       case Left(k) => assertKindIsWellFormed(k)
       case Right(t) => assert(tcType(t) == Star, "addTypeVar: superclass must have kind Star")
     }
-    new Typechecker(cEnv, kEnv, tEnv + (nm -> kindOrBound), tDefs, env, thisType)
+    new Typechecker(cEnv, kEnv, tEnv + (nm -> kindOrBound), tDefs, kDefs, env, thisType)
   }
 
   def addTypeDef(nm:Ident, kind:Kind, defn:Type) : Typechecker = {
     assertKindIsWellFormed(kind)
-    assert(tcType(defn) == kind, s"addTypeDef: type $defn does not have kind $kind")
+    val expKind = substKind(kDefs, kind)
+    val defKind = substKind(kDefs, tcType(defn))
+
+    assert(alphaEquivK(defKind, expKind), s"addTypeDef $nm: type $defn has kind $defKind, not the expected kind $expKind")
     // make sure tDefs is idempotent, by expanding any defs in the new defn
     val defn1 = substTy(Map(), tDefs.mapValues(_._2), defn)
-    new Typechecker(cEnv, kEnv, tEnv - nm, tDefs + (nm -> (kind,defn1)), env, thisType)
+    new Typechecker(cEnv, kEnv, tEnv - nm, tDefs + (nm -> (kind,defn1)), kDefs, env, thisType)
   }
 
-  def addKindVar(nm: Ident): Typechecker = new Typechecker(cEnv, kEnv + nm, tEnv, tDefs, env, thisType)
+  def addKindVar(nm: Ident): Typechecker = new Typechecker(cEnv, kEnv + nm, tEnv, tDefs, kDefs, env, thisType)
+
+  def addKindDef(nm : Ident, k:Kind) : Typechecker = {
+    assertKindIsWellFormed(k)
+    val k1 = substKind(kDefs,k)
+    new Typechecker(cEnv, kEnv, tEnv, tDefs, kDefs + (nm -> k1), env, thisType)
+  }
 
   // subst1 is newer than subst2. apply subst1 to each type in subst2, then extend the resulting
   // substitution with subst1's entries
@@ -140,6 +150,8 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case (KVar(nm1),KVar(nm2)) => kMap.getOrElse(nm1,nm1) == nm2
     case (KArr(l1,r1),KArr(l2,r2)) => alphaEquivK(l1,l2,kMap) && alphaEquivK(r1,r2,kMap)
     case (KForall(nm1,bdy1), KForall(nm2,bdy2)) => alphaEquivK(bdy1,bdy2,kMap + (nm1 -> nm2))
+    case _ =>
+      throw new Exception("alphaEquivK: match error")
   }
 
   def alphaEquivKindOrBound(kb1 : Either[Kind,Type],kb2 : Either[Kind,Type],tMap : Map[Ident,Ident] = Map(),kMap : Map[Ident,Ident] = Map()) : Boolean =
@@ -260,7 +272,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
         throw new Exception("class " + d.nm + " already declared")
     })
 
-    val tc = new Typechecker(cEnv ++ ds.map(d => d.nm -> d), kEnv, tEnv, tDefs, env, thisType)
+    val tc = new Typechecker(cEnv ++ ds.map(d => d.nm -> d), kEnv, tEnv, tDefs, kDefs, env, thisType)
 
     // typecheck last, so all the (mutual) recursion will work
     ds.map(_.nm).foreach(nm =>
@@ -294,10 +306,10 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
 
   def addVarDecls(decls: List[VarDecl]): Typechecker = {
     decls.foreach(d => assert(tcType(d.ty) == Star))
-    new Typechecker(cEnv, kEnv, tEnv, tDefs, env ++ decls.map(d => d.nm -> d.ty), thisType)
+    new Typechecker(cEnv, kEnv, tEnv, tDefs, kDefs, env ++ decls.map(d => d.nm -> d.ty), thisType)
   }
 
-  def setThisType(ty: Type): Typechecker = new Typechecker(cEnv, kEnv, tEnv, tDefs, env, Some(ty))
+  def setThisType(ty: Type): Typechecker = new Typechecker(cEnv, kEnv, tEnv, tDefs, kDefs, env, Some(ty))
 
   def classKind(d : ClassDecl) : Kind =
     d.params.foldRight[Kind](Star)({
@@ -309,9 +321,11 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
   // Does kind-checking, but doesn't check subtype constraints on type parameters
   def tcType(t: Type): Kind = t match {
     case Top => Star
-    case TVar(nm) if tDefs contains nm => tDefs(nm)._1
+    case TVar(nm) if tDefs contains nm => substKind(kDefs,tDefs(nm)._1)
     case TVar(nm) if tEnv contains nm => tEnv(nm) match {
-      case Left(k) => k
+      case Left(k) =>
+        val k1 = substKind(kDefs,k)
+        k1
       case Right(sup) => Star
     }
     case TVar(nm) if cEnv contains nm => classKind(cEnv(nm))
@@ -319,25 +333,31 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case TTAbs(nm,kindOrBound,bdy) =>
       // TODO: either remove bounds on type abstractions, or somehow add bounds to the kind language
       val k1 = kindOrBound match {
-        case Left(k) => k
+        case Left(k) => substKind(kDefs,k)
         case Right(t) => Star
       }
       val k2 = addTypeVar(nm,kindOrBound).tcType(bdy)
       KArr(k1,k2)
-    case TTApp(t1,t2) => (tcType(t1), tcType(t2)) match {
-      case (KArr(a1,r),a2) if a1 == a2 => r
-      case (k1,k2) => throw new Exception(s"""tcType TTApp error
-                                             |t1 = $t1
-                                             |k1 = $k1
-                                             |t2 = $t2
-                                             |k2 = $k2
-                                             |""".stripMargin)
+    case TTApp(t1,t2) =>
+      val k1 = tcType(t1)
+      val k2 = tcType(t2)
+      (k1,k2) match {
+      case (KArr(a1,r),a2) if alphaEquivK(a1,a2) => r
+      case _ => throw new Exception(s"""tcType TTApp error
+                                       |t1 = $t1
+                                       |k1 = $k1
+                                       |t2 = $t2
+                                       |k2 = $k2
+                                       |""".stripMargin)
     }
     case TKAbs(nm,bdy) => KForall(nm, addKindVar(nm).tcType(bdy))
     case TKApp(t1,k) =>
       assertKindIsWellFormed(k)
-      tcType(t1) match {
-        case KForall(nm,bdy) => substKind(Map(nm -> k),bdy)
+      val t1k = tcType(t1)
+      val t1kClosed = substKind(kDefs,t1k)
+      val kClosed = substKind(kDefs,k)
+      t1kClosed match {
+        case KForall(nm,bdy) => substKind(Map(nm -> kClosed),bdy)
       }
     case TForallTy(nm, kindOrBound, bdy) =>
       assert(addTypeVar(nm, kindOrBound).tcType(bdy) == Star, "Forall type body failed to kind-check")
@@ -348,25 +368,48 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
     case _ => throw new Exception("tcType: no case for " + t)
   }
 
+  def instantiateClass(cNm: Ident, gParams: List[Either[Kind, Type]]) : (ClassDecl, Map[Ident,Kind], Map[Ident,Type]) = {
+    val cd = cEnv(cNm)
+    val (kSubst,tSubst) =
+      try {
+        instantiateGVars(cd.params, gParams)
+      } catch {
+        case e : Exception =>
+          throw new Exception(s"instantiateClass: error instantiating $cNm", e)
+      }
+    (cd,kSubst,tSubst)
+  }
+
+  def getFields(t : Type) : List[(String,Type)] = t match {
+    case Top => List()
+    case TVar(_) | TTApp(_,_) | TKApp(_,_) =>
+      val (cNm, params) = unfoldTypeApps(t)
+      val (cd, kSubst, tSubst) = instantiateClass(cNm, params)
+
+      val fields = cd.fields.map(p => (p._1, substTy(kSubst,tSubst,p._2)))
+      val parentFields = getFields(getParentType(t))
+      parentFields ++ fields
+    case _ =>
+      throw new Exception(s"getFields: type $t has no fields")
+  }
+
   def tcExpr(e: Expr): Type = e match {
     case Var(nm) => env getOrElse(nm, throw new Exception("undeclared variable " + nm))
     case Field(obj, nm) => lookupFieldType(tcExpr(obj), nm)
     case This => thisType.get
     case New(cNm,gParams,params) =>
-      val cd = cEnv(cNm)
-      val (kSubst,tSubst) =
-        try {
-          instantiateGVars(cd.params, gParams)
-        } catch {
-          case e : Exception =>
-            throw new Exception(s"error instantiating $cNm", e)
-        }
+      // type of the new object
+      val oTy = normalizeTy(foldTypeApps(cNm,gParams))
+
+      // get the list of all fields (from class cNm and superclasses)
+      val fields = getFields(oTy)
 
       // check we have the right number of constructor parameters
-      assert(params.length == cd.fields.length, "tcExpr: wrong number of constructor parameters")
+      if(params.length != fields.length)
+        throw new Exception("tcExpr: wrong number of constructor parameters")
 
       // now check the types of constructor parameters
-      cd.fields.map(fd => (fd._1,substTy(kSubst,tSubst,fd._2))).zip(params).foreach({
+      fields.zip(params).foreach({
         case ((nm,t), e) =>
           val eTy = tcExpr(e)
           val fTy = normalizeTy(t)
@@ -387,7 +430,7 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
           }
       })
 
-      normalizeTy(foldTypeApps(cNm,gParams))
+      oTy
 
     case Call(e, actualTys, nm, actuals) =>
       val tyE = tcExpr(e)
@@ -441,7 +484,9 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
           throw new Exception("tcExpr/KApp: subexpression does not have forall-kind type: " + e1Ty)
       }
     case KLet(nm,k,bdy) =>
-      tcExpr(KApp(KAbs(nm,bdy),k))
+      val tc = addKindDef(nm,k)
+      val bdyT = tc.tcExpr(bdy)
+      substTy(Map(nm -> k), Map() , bdyT)
     case TLet(nm,k,t,bdy) =>
       val bdyT = addTypeDef(nm,k,t).tcExpr(bdy)
       substTy(Map(),Map(nm -> t), bdyT)

@@ -181,6 +181,17 @@ class TestTypechecker extends FlatSpec with Matchers {
     val t = parser.parseTy("B")
     new Typechecker().addClassDecls(List(A,B)).tcExpr(e) should be(t)
   }
+  "tcExpr" should "require values for superclasses fields" in {
+    val A = parser.parseClassDecl("class A {}")
+    val B = parser.parseClassDecl("class B {A x;}")
+    val C = parser.parseClassDecl("class C extends B {A y;}")
+    val e = parser.parseExpr("new C(new A())")
+    an [Exception] shouldBe thrownBy (
+      new Typechecker().addClassDecls(List(A,B,C)).tcExpr(e)
+    )
+  }
+
+
 
   "alphaEquivTy" should "be true for syntactically equal types 1" in {
     val A = parser.parseTy("<A> B<A>")
