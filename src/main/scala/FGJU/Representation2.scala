@@ -178,9 +178,8 @@ object Representation2 {
       |let B_foo : Fun<Lazy<B>,TyB_id> =
       |  new TPolyExprBinder<B,+*,\A.Pair<A,Nil>,\A.A,A>(
       |    /\A.
-      |    new VarExpr<B,Pair<A,Nil>,Pair<A,Nil>,A>(
-      |      new SubRefl<Pair<A,Nil>>(),
-             new IndexZ<A,Nil>()
+      |    new VarExpr<B,Pair<A,Nil>,A>(
+      |      new IndexZ<A,Nil>()
       |    )
       |  )
       |in
@@ -578,11 +577,10 @@ object Representation2 {
     """.stripMargin
 
   val VarExprSrc =
-    """class VarExpr<This,Env,Env1,T> extends Expr<This,Env,T> {
-      |  Sub<Env,Env1> subEnv;
-      |  Index<Env1,T> idx;
+    """class VarExpr<This,Env,T> extends Expr<This,Env,T> {
+      |  Index<Env,T> idx;
       |  <Ret> Ret accept(ExprVisitor<This,Env,T,Ret> v) {
-      |    return v.<Env1>var(this.subEnv, this.idx);
+      |    return v.var(this.idx);
       |  }
       |}
     """.stripMargin
@@ -620,8 +618,8 @@ object Representation2 {
 
   val ExprVisitorSrc =
     """class ExprVisitor<This,Env,T,Ret> {
-      |  <Env1> Ret var(Sub<Env,Env1> subEnv, Index<Env1,T> idx) {
-      |    return this.<Env1>var(subEnv,idx);
+      |  Ret var(Index<Env,T> idx) {
+      |    return this.var(idx);
       |  }
       |  Ret _this(Sub<This,T> sub) { return this._this(sub); }
       |
@@ -924,8 +922,8 @@ object Representation2 {
       |  This _this;
       |  Env env;
       |
-      |  <Env1> T var(Sub<Env,Env1> subEnv, Index<Env1, T> idx) {
-      |    return idx.apply(subEnv.upcast(this.env));
+      |  T var(Index<Env, T> idx) {
+      |    return idx.apply(this.env);
       |  }
       |
       |  T _this(Sub<This,T> sub) {
