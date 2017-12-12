@@ -388,6 +388,7 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
     (cd,kSubst,tSubst)
   }
 
+  // TODO combine getFields and getMethods into a single method
   def getFields(t : Type) : List[(String,Type)] = t match {
     case Top => List()
     case TVar(_) | TTApp(_,_) | TKApp(_,_) =>
@@ -400,6 +401,21 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
     case _ =>
       throw new Exception(s"getFields: type $t has no fields")
   }
+
+  def getMethods(t : Type) : List[MethodSig] = t match {
+    case Top => List()
+    case TVar(_) | TTApp(_,_) | TKApp(_,_) =>
+      val (cNm, params) = unfoldTypeApps(t).get
+      val (cd, kSubst, tSubst) = instantiateClass(cNm, params)
+
+      val methods = cd.methods.map(methodSig)
+      val parentMethods = getMethods(getParentType(t))
+      val nms = Set() ++ parentMethods.map(_.nm)
+      parentMethods ++ methods.filterNot(m => nms.contains(m.nm))
+    case _ =>
+      throw new Exception(s"getFields: type $t has no fields")
+  }
+
 
   def tcExpr(e: Expr): Type = e match {
     case Var(nm) => env getOrElse(nm, throw new Exception("undeclared variable " + nm))

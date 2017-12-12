@@ -2,6 +2,7 @@ package FGJU
 
 import Representation2._
 import scala.collection.immutable.{ListMap, ListSet}
+import Printer._
 
 class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
              kEnv: ListSet[Ident] = ListSet(),
@@ -47,13 +48,33 @@ class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
     null
   }
 
+  def translateMethodSig(m : MethodSig) : String = {
+    val paramTypes : String = tupleType(m.paramTypes.map(translateType))
+    val retType : String = translateType(m.retTy)
+    m.tParams.foldRight(s"BoundExpr<$paramTypes,$retType>")({
+      case (GVarDecl(nm, GAType(Left(k))),s) => s"<$nm:${pprintKind(k)}>$s"
+      case (GVarDecl(nm, GAKind),s) => s"<+$nm>$s"
+    })
+  }
+
+  def isObjectType(t: Type) : Boolean = unfoldTypeApps(t) match {
+    case Some((nm,_)) => cEnv contains(nm)
+    case None => false
+  }
+
   def translateType(t : Type) : String = t match {
     case Top => "Pair<Nil,Nil>"
     case TVar(x) if tEnv contains(x) => x.nm
-    case _ =>
+    case TForallTy(nm,Left(k),bdy) => s"<$nm:${pprintKind(k)}>${translateType(bdy)}"
+    case TForallK(nm,bdy) => s"<+$nm>${translateType(bdy)}"
+    case TTAbs(nm,Left(k),bdy) => s"λ$nm:${pprintKind(k)}.${translateType(bdy)}"
+    case TKAbs(nm,bdy) => s"Λ$nm.${translateType(bdy)}"
+    case _ if isObjectType(t) =>
       val fieldTypes  : String = tupleType(getFields(t).map(p => translateType(p._2)))
-      val methodTypes : String = ""
+      val methodTypes : String = tupleType(getMethods(t).map(translateMethodSig))
       s"Pair<$fieldTypes,$methodTypes>"
+    case TTApp(t1,t2) => s"${translateType(t1)}<${translateType(t2)}>"
+    case TKApp(t1,k)  => s"${translateType(t1)}<+${pprintKind(k)}>"
   }
 
   def tupleType(l : List[String]) : String = l.foldRight("Nil")((hd, tl) => s"Pair<$hd,$tl>")
