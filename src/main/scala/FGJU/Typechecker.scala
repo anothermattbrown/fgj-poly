@@ -13,6 +13,7 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
   def cEnv() : ListMap[Ident,ClassDecl] = cEnv
   def env() : ListMap[Ident,Type] = env
   def tEnv() : ListMap[Ident,Either[Kind,Type]] = tEnv
+  def kEnv() : ListSet[Ident] = kEnv
   def tDefs() : ListMap[Ident,(Kind,Type)] = tDefs
 
   def assertKindIsWellFormed(k: Kind): Unit = k match {
@@ -397,7 +398,7 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
 
       val fields = cd.fields.map(p => (p._1, substTy(kSubst,tSubst,p._2)))
       val parentFields = getFields(getParentType(t))
-      parentFields ++ fields
+      fields ++ parentFields
     case _ =>
       throw new Exception(s"getFields: type $t has no fields")
   }
