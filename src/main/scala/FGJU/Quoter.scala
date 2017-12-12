@@ -13,9 +13,9 @@ class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
              thisType: Option[Type] = None)
   extends Typechecker(cEnv, kEnv, tEnv, tDefs, kDefs, env, thisType) {
 
-  val thisTypeSrc : Option[String] = thisType.map(translateType)
+  val thisTypeSrc : Option[String] = thisType.map(quoteType)
   val envNames : List[Ident] = List() ++ env.keys
-  val envTypes : List[String] = List() ++ env.map(p => translateType(p._2))
+  val envTypes : List[String] = List() ++ env.map(p => quoteType(p._2))
 
   // override Typechecker methods
   override def addTypeDef(nm: Ident, kind: Kind, defn: Type) : Quoter = {
@@ -42,15 +42,14 @@ class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
     new Quoter(cEnv, kEnv, tEnv, tDefs, kDefs, env, Some(ty))
   }
 
-  // new translation methods
-
-  def translateClass(cd : ClassDecl) : Expr = {
+  // new quotation methods
+  def quoteClass(cd : ClassDecl) : Expr = {
     null
   }
 
-  def translateMethodSig(m : MethodSig) : String = {
-    val paramTypes : String = tupleType(m.paramTypes.map(translateType))
-    val retType : String = translateType(m.retTy)
+  def quoteMethodSig(m : MethodSig) : String = {
+    val paramTypes : String = tupleType(m.paramTypes.map(quoteType))
+    val retType : String = quoteType(m.retTy)
     m.tParams.foldRight(s"BoundExpr<$paramTypes,$retType>")({
       case (GVarDecl(nm, GAType(Left(k))),s) => s"<$nm:${pprintKind(k)}>$s"
       case (GVarDecl(nm, GAKind),s) => s"<+$nm>$s"
@@ -62,19 +61,19 @@ class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
     case None => false
   }
 
-  def translateType(t : Type) : String = t match {
+  def quoteType(t : Type) : String = t match {
     case Top => "Pair<Nil,Nil>"
     case TVar(x) if tEnv contains(x) => x.nm
-    case TForallTy(nm,Left(k),bdy) => s"<$nm:${pprintKind(k)}>${translateType(bdy)}"
-    case TForallK(nm,bdy) => s"<+$nm>${translateType(bdy)}"
-    case TTAbs(nm,Left(k),bdy) => s"λ$nm:${pprintKind(k)}.${translateType(bdy)}"
-    case TKAbs(nm,bdy) => s"Λ$nm.${translateType(bdy)}"
+    case TForallTy(nm,Left(k),bdy) => s"<$nm:${pprintKind(k)}>${quoteType(bdy)}"
+    case TForallK(nm,bdy) => s"<+$nm>${quoteType(bdy)}"
+    case TTAbs(nm,Left(k),bdy) => s"λ$nm:${pprintKind(k)}.${quoteType(bdy)}"
+    case TKAbs(nm,bdy) => s"Λ$nm.${quoteType(bdy)}"
     case _ if isObjectType(t) =>
-      val fieldTypes  : String = tupleType(getFields(t).map(p => translateType(p._2)))
-      val methodTypes : String = tupleType(getMethods(t).map(translateMethodSig))
+      val fieldTypes  : String = tupleType(getFields(t).map(p => quoteType(p._2)))
+      val methodTypes : String = tupleType(getMethods(t).map(quoteMethodSig))
       s"Pair<$fieldTypes,$methodTypes>"
-    case TTApp(t1,t2) => s"${translateType(t1)}<${translateType(t2)}>"
-    case TKApp(t1,k)  => s"${translateType(t1)}<+${pprintKind(k)}>"
+    case TTApp(t1,t2) => s"${quoteType(t1)}<${quoteType(t2)}>"
+    case TKApp(t1,k)  => s"${quoteType(t1)}<+${pprintKind(k)}>"
   }
 
   def tupleType(l : List[String]) : String = l.foldRight("Nil")((hd, tl) => s"Pair<$hd,$tl>")
@@ -93,12 +92,12 @@ class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
 
   def newVarExpr(i : Ident) : String = {
     var n = envNames.indexOf(i)
-    var t = translateType(env(i))
+    var t = quoteType(env(i))
     var idx = newIndex(n,envTypes)
     s"new VarExpr<${thisTypeSrc.get},${tupleType(envTypes)},$t>($idx)"
   }
 
-  def translateExpr(e : Expr) : Expr = e match {
+  def quoteExpr(e : Expr) : Expr = e match {
     case Var(x) => null // newVarExpr(
   }
 }
