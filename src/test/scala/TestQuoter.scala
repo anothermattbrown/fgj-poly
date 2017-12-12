@@ -3,11 +3,9 @@ import org.scalatest.{FlatSpec, Matchers}
 import FGJU.Conversions._
 import FGJU.Representation2._
 
-class TestQuoter extends FlatSpec with Matchers {
-  "Quoter" should "make sure varOrder contains all/only elements of env" in {
-    an [AssertionError] shouldBe thrownBy(new Quoter(Map(),Set(),Map(),Map(),Map(),Map(),List("hey"),None))
-  }
+import scala.collection.immutable.ListMap
 
+class TestQuoter extends FlatSpec with Matchers {
   val cds = classDecls.map(p => parser.parseClassDecl(p._2))
   val trans = new Quoter().addClassDecls(cds)
 

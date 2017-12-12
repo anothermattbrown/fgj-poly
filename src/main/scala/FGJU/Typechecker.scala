@@ -1,17 +1,19 @@
 package FGJU
 
-class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
-                  kEnv: Set[Ident] = Set(),
-                  tEnv: Map[Ident, Either[Kind, Type]] = Map(),
-                  tDefs : Map[Ident,(Kind,Type)] = Map(),
-                  kDefs : Map[Ident,Kind] = Map(),
-                  env: Map[Ident, Type] = Map(),
+import scala.collection.immutable.{ListMap,ListSet}
+
+class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
+                  kEnv: ListSet[Ident] = ListSet(),
+                  tEnv: ListMap[Ident, Either[Kind, Type]] = ListMap(),
+                  tDefs : ListMap[Ident,(Kind,Type)] = ListMap(),
+                  kDefs : ListMap[Ident,Kind] = ListMap(),
+                  env: ListMap[Ident, Type] = ListMap(),
                   thisType: Option[Type] = None) {
   // getters
-  def cEnv() : Map[Ident,ClassDecl] = cEnv
-  def env() : Map[Ident,Type] = env
-  def tEnv() : Map[Ident,Either[Kind,Type]] = tEnv
-  def tDefs() : Map[Ident,(Kind,Type)] = tDefs
+  def cEnv() : ListMap[Ident,ClassDecl] = cEnv
+  def env() : ListMap[Ident,Type] = env
+  def tEnv() : ListMap[Ident,Either[Kind,Type]] = tEnv
+  def tDefs() : ListMap[Ident,(Kind,Type)] = tDefs
 
   def assertKindIsWellFormed(k: Kind): Unit = k match {
     case Star => ()

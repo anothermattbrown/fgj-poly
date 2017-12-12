@@ -1,46 +1,44 @@
 package FGJU
 
 import Representation2._
+import scala.collection.immutable.{ListMap, ListSet}
 
-class Quoter(cEnv: Map[Ident, ClassDecl] = Map(),
-             kEnv: Set[Ident] = Set(),
-             tEnv: Map[Ident, Either[Kind, Type]] = Map(),
-             tDefs : Map[Ident,(Kind,Type)] = Map(),
-             kDefs : Map[Ident,Kind] = Map(),
-             env : Map[Ident, Type] = Map(),
-             varOrder : List[Ident] = List(),
+class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
+             kEnv: ListSet[Ident] = ListSet(),
+             tEnv: ListMap[Ident, Either[Kind, Type]] = ListMap(),
+             tDefs : ListMap[Ident,(Kind,Type)] = ListMap(),
+             kDefs : ListMap[Ident,Kind] = ListMap(),
+             env : ListMap[Ident, Type] = ListMap(),
              thisType: Option[Type] = None)
   extends Typechecker(cEnv, kEnv, tEnv, tDefs, kDefs, env, thisType) {
 
-  // check invariants
-  assert(Set() ++ varOrder == env.keySet)
-
   val thisTypeSrc : Option[String] = thisType.map(translateType)
-  val envTypes : List[String] = varOrder.map(i => translateType(env(i)))
+  val envNames : List[Ident] = List() ++ env.keys
+  val envTypes : List[String] = List() ++ env.map(p => translateType(p._2))
 
   // override Typechecker methods
   override def addTypeDef(nm: Ident, kind: Kind, defn: Type) : Quoter = {
     val tc : Typechecker = super.addTypeDef(nm, kind, defn)
-    new Quoter(cEnv, kEnv, tEnv, tc.tDefs, kDefs, env, varOrder, thisType)
+    new Quoter(cEnv, kEnv, tEnv, tc.tDefs, kDefs, env, thisType)
   }
 
   override def addTypeVar(nm: Ident, kindOrBound: Either[Kind, Type]) : Quoter = {
     val tc : Typechecker = super.addTypeVar(nm, kindOrBound)
-    new Quoter(cEnv, kEnv, tc.tEnv, tDefs, kDefs, env, varOrder, thisType)
+    new Quoter(cEnv, kEnv, tc.tEnv, tDefs, kDefs, env, thisType)
   }
 
   override def addVarDecls(decls: List[VarDecl]) : Quoter = {
     val tc : Typechecker = super.addVarDecls(decls)
-    new Quoter(cEnv, kEnv, tEnv, tDefs, kDefs, tc.env, varOrder ++ decls.map(d => d.nm), thisType)
+    new Quoter(cEnv, kEnv, tEnv, tDefs, kDefs, tc.env, thisType)
   }
 
   override def addClassDecls(cds: List[ClassDecl]): Quoter = {
     val tc = super.addClassDecls(cds)
-    new Quoter(tc.cEnv, kEnv, tEnv, tDefs, kDefs, env, varOrder, thisType)
+    new Quoter(tc.cEnv, kEnv, tEnv, tDefs, kDefs, env, thisType)
   }
 
   override def setThisType(ty: Type): Quoter = {
-    new Quoter(cEnv, kEnv, tEnv, tDefs, kDefs, env, varOrder, Some(ty))
+    new Quoter(cEnv, kEnv, tEnv, tDefs, kDefs, env, Some(ty))
   }
 
   // new translation methods
@@ -51,7 +49,15 @@ class Quoter(cEnv: Map[Ident, ClassDecl] = Map(),
 
   def translateType(t : Type) : String = t match {
     case Top => "Pair<Nil,Nil>"
-    case TVar(x) => x.nm
+    case TVar(x) if tEnv contains(x) => x.nm
+    case TVar(x) if cEnv contains(x) => {
+      val cd = cEnv(x)
+      /*
+      val fieldsTypes : String = tupleType(cd.fields)
+      s"Pair<${fieldTypes},${methodTypes}>"
+      */
+      null
+    }
   }
 
   def tupleType(l : List[String]) : String = l.foldRight("Nil")((hd, tl) => s"Pair<$hd,$tl>")
@@ -69,7 +75,7 @@ class Quoter(cEnv: Map[Ident, ClassDecl] = Map(),
   }
 
   def newVarExpr(i : Ident) : String = {
-    var n = varOrder.indexOf(i)
+    var n = envNames.indexOf(i)
     var t = translateType(env(i))
     var idx = newIndex(n,envTypes)
     s"new VarExpr<${thisTypeSrc.get},${tupleType(envTypes)},$t>($idx)"
