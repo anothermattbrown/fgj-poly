@@ -7,6 +7,12 @@ class Typechecker(cEnv: Map[Ident, ClassDecl] = Map(),
                   kDefs : Map[Ident,Kind] = Map(),
                   env: Map[Ident, Type] = Map(),
                   thisType: Option[Type] = None) {
+  // getters
+  def cEnv() : Map[Ident,ClassDecl] = cEnv
+  def env() : Map[Ident,Type] = env
+  def tEnv() : Map[Ident,Either[Kind,Type]] = tEnv
+  def tDefs() : Map[Ident,(Kind,Type)] = tDefs
+
   def assertKindIsWellFormed(k: Kind): Unit = k match {
     case Star => ()
     case KVar(nm) if (kEnv contains nm) || (kDefs contains nm) => ()
