@@ -83,14 +83,16 @@ object foldTypeApps {
 }
 
 object unfoldTypeApps {
-  def apply(t: Type): (Ident, List[Either[Kind, Type]]) = t match {
-    case TVar(nm) => (nm, List())
+  def apply(t: Type): Option[(Ident, List[Either[Kind, Type]])] = t match {
+    case TVar(nm) => Some(nm, List())
     case TTApp(t1, param) =>
-      val (nm, params) = unfoldTypeApps(t1)
-      (nm, params ++ List(Right(param)))
+      unfoldTypeApps(t1).map({
+        case (nm, params) => (nm, params ++ List(Right(param)))
+      })
     case TKApp(t1, param) =>
-      val (nm, params) = unfoldTypeApps(t1)
-      (nm, params ++ List(Left(param)))
-    case _ => throw new Exception("unfoldTypeApps: cannot unfold type " + t)
+      unfoldTypeApps(t1).map({
+        case (nm, params) => (nm, params ++ List(Left(param)))
+      })
+    case _ => None
   }
 }

@@ -87,7 +87,7 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
     case TForallTy(_, _, _) => Top // throw new Exception("Forall types have no parent types")
     case TForallK(_,_)      => Top // throw new Exception("Forall types have no parent types")
     case _ =>
-      val (nm,params) = unfoldTypeApps(t)
+      val (nm,params) = unfoldTypeApps(t).get
       if(cEnv contains nm) {
         try {
           val classDecl = cEnv(nm)
@@ -391,7 +391,7 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
   def getFields(t : Type) : List[(String,Type)] = t match {
     case Top => List()
     case TVar(_) | TTApp(_,_) | TKApp(_,_) =>
-      val (cNm, params) = unfoldTypeApps(t)
+      val (cNm, params) = unfoldTypeApps(t).get
       val (cd, kSubst, tSubst) = instantiateClass(cNm, params)
 
       val fields = cd.fields.map(p => (p._1, substTy(kSubst,tSubst,p._2)))
@@ -654,8 +654,13 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
   }
 
   def lookupFieldType(ty: Type, fNm: String): Type = {
+    getFields(ty).find(p => p._1 == fNm).map(_._2).getOrElse(
+      throw new Exception(s"lookupFieldType: unknown field $fNm of type $ty")
+    )
+    // OLD CODE DIDN'T INCLUDE SUPERCLASS FIELDS
+    /*
     // Don't support field access on quantified types.
-    val (nm,params) = unfoldTypeApps(ty)
+    val (nm,params) = unfoldTypeApps(ty).get
     val classDecl = cEnv(nm)
 
     if (classDecl.params.length != params.length)
@@ -664,6 +669,7 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
     val (kSubst, tSubst) = instantiateGVars(classDecl.params, params)
     val fieldTy = (Map() ++ classDecl.fields)(fNm)
     substTy(kSubst, tSubst, fieldTy)
+    */
   }
 
   case class MethodSig(tParams: List[GVarDecl], retTy: Type, nm : String, paramTypes: List[Type])
@@ -676,7 +682,8 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
     if(ty == Top) return None
 
     // Don't support field access on quantified types.
-    val (nm,params) = unfoldTypeApps(ty)
+    // TODO: inheritance of superclass methods!
+    val (nm,params) = unfoldTypeApps(ty).get
     val cd = cEnv(nm)
 
     if (cd.params.length != params.length)

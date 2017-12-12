@@ -50,14 +50,10 @@ class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
   def translateType(t : Type) : String = t match {
     case Top => "Pair<Nil,Nil>"
     case TVar(x) if tEnv contains(x) => x.nm
-    case TVar(x) if cEnv contains(x) => {
-      val cd = cEnv(x)
-      /*
-      val fieldsTypes : String = tupleType(cd.fields)
-      s"Pair<${fieldTypes},${methodTypes}>"
-      */
-      null
-    }
+    case _ =>
+      val fieldTypes  : String = tupleType(getFields(t).map(p => translateType(p._2)))
+      val methodTypes : String = ""
+      s"Pair<$fieldTypes,$methodTypes>"
   }
 
   def tupleType(l : List[String]) : String = l.foldRight("Nil")((hd, tl) => s"Pair<$hd,$tl>")
