@@ -494,6 +494,13 @@ object Representation2 {
       |}
     """.stripMargin
 
+  val SubTopSrc =
+    """class SubTop<T> extends Sub<T, Pair<Nil,Nil>> {
+      |  Pair<Nil,Nil> upcast(T t) { return new Pair<Nil,Nil>(new Nil(), new Nil()); }
+      |}
+    """.stripMargin
+
+
   val PolyIndexSrc =
     "class PolyIndex<F:* -> *, Tup : (* -> *) -> *, T> extends Fun<Tup<F>, F<T>> {}"
   val PolyIndexZSrc =
@@ -808,6 +815,8 @@ object Representation2 {
       |  }
       |}
     """.stripMargin
+
+
   val SomeBoundExprSrc =
     """class SomeBoundExpr<This,Env,T> extends BoundExpr<Env,T> {
       |  Lazy<This> _this;
@@ -823,8 +832,8 @@ object Representation2 {
       |}
     """.stripMargin
 
-  val SubBoundExprSrc =
-  """class SubBoundExpr<This,SupEnv,SubT,Env,T> extends BoundExpr<Env,T> {
+  val BoundExprSubSrc =
+  """class BoundExprSub<This,SupEnv,SubT,Env,T> extends BoundExpr<Env,T> {
     |  Lazy<This> _this;
     |  Expr<This,SupEnv,SubT> e;
     |  Sub<Env,SupEnv> subEnv;
@@ -855,10 +864,24 @@ object Representation2 {
       |            Expr<This,SupEnv2,SubT2> e,
       |            Sub<SupEnv,SupEnv2> subEnv2,
       |            Sub<SubT2,SubT> subT2) {
-      |    return new SubBoundExpr<This,SupEnv2,SubT2,SubEnv,SupT>(
+      |    return new BoundExprSub<This,SupEnv2,SubT2,SubEnv,SupT>(
       |      _this, e,
       |      new SubTrans<SubEnv,SupEnv,SupEnv2>(this.subEnv,subEnv2),
       |      new SubTrans<SubT2,SubT,SupT>(subT2,this.subT)
+      |    );
+      |  }
+      |}
+    """.stripMargin
+
+  val SubBoundExprSrc =
+    """class SubBoundExpr<SubEnv,SupEnv,SubT,SupT>
+      |  extends Sub<BoundExpr<SupEnv,SubT>, BoundExpr<SubEnv,SupT>> {
+      |  Sub<SubEnv, SupEnv> subEnv;
+      |  Sub<SubT, SupT> subT;
+      |
+      |  BoundExpr<SubEnv,SupT> upcast(BoundExpr<SupEnv,SubT> be) {
+      |    return be.<BoundExpr<SubEnv,SupT>>accept(
+      |      new UpcastBoundExpr<SubEnv,SupEnv,SubT,SupT>(this.subEnv,this.subT)
       |    );
       |  }
       |}
@@ -1090,6 +1113,7 @@ object Representation2 {
     ("SubPairWidth",        SubPairWidthSrc),
     ("SubForallTy",         SubForallTySrc),
     ("SubForallK",          SubForallKSrc),
+    ("SubTop",              SubTopSrc),
     ("Expr",        ExprSrc),
     ("VarExpr",     VarExprSrc),
     /*
@@ -1118,8 +1142,9 @@ object Representation2 {
     ("BoundExpr",   BoundExprSrc),
     ("BoundExprVisitor", BoundExprVisitorSrc),
     ("SomeBoundExpr", SomeBoundExprSrc),
-    ("SubBoundExpr", SubBoundExprSrc),
+    ("BoundExprSub", BoundExprSubSrc),
     ("UpcastBoundExpr", UpcastBoundExprSrc),
+    ("SubBoundExpr",    SubBoundExprSrc),
     ("ExprBinder",    ExprBinderSrc),
     ("TPolyExprBinder", TPolyExprBinderSrc),
     ("KPolyExprBinder", KPolyExprBinderSrc),

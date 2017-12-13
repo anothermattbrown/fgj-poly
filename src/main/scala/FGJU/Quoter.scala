@@ -43,6 +43,8 @@ class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
     new Quoter(tc.cEnv, kEnv, tEnv, tDefs, kDefs, env, thisType)
   }
 
+  override def addClassDecl(cd: ClassDecl): Quoter = addClassDecls(List(cd))
+
   override def setThisType(ty: Type): Quoter = {
     new Quoter(cEnv, kEnv, tEnv, tDefs, kDefs, env, Some(ty))
   }
@@ -89,7 +91,7 @@ class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
     m.tParams.foldRight(s"BoundExpr<$paramTypes,$retType>")(quoteTypeGVarDecl)
   }
 
-  def quoteMethod(m : MethodDecl) : String = ""
+  def quoteMethod(m : MethodDecl) : String = throw new Exception("TODO: quoteMethod")
 
   def quoteSubtypeClass(t : Type) : String = {
     val p = getParentType(t)
@@ -105,7 +107,7 @@ class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
   def quoteSubtypeClassFields(t: Type) : String = {
     val fieldTys = getFields(t)
     val parent = getParentType(t)
-    val parentFieldTys = getFields(getParentType(t))
+    val parentFieldTys = getFields(parent)
 
     // fieldTys is an extension of parentFieldTys.
     // Just need to compose SubPairWidth n times, where fieldTys.length = parentFieldTys + n
@@ -124,7 +126,95 @@ class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
     quoteSubPairWidths(extraFieldTys, parentFieldsTupleTy)
   }
 
-  def quoteSubtypeClassMethods(t : Type) = throw new Exception("TODO: quoteSubtypeClassMethods")
+  def quoteSubtypeClassMethods(t : Type) : String = {
+    val methodSigs = getMethods(t)
+    val parent = getParentType(t)
+    val parentMethodSigs = getMethods(parent)
+
+    // methodSigs is a left-extension of parentMethodSigs, modulo subtyping
+    val n = methodSigs.length - parentMethodSigs.length
+    val overrides = methodSigs.drop(n)
+    val additions = methodSigs.take(n)
+
+    overrides.zip(parentMethodSigs).foreach({
+      case (subSig,supSig) => assertValidMethodSigOverride(subSig,supSig)
+    })
+
+    val allSubtypeSigs = tupleType(methodSigs.map(quoteMethodSig))
+    val overridedSubtypeSigs = tupleType(overrides.map(quoteMethodSig))
+    val supertypeSigs = tupleType(parentMethodSigs.map(quoteMethodSig))
+
+    val width = quoteSubPairWidths(additions.map(quoteMethodSig),tupleType(overrides.map(quoteMethodSig)))
+    val depth = quoteSubMethodOverrides(overrides,parentMethodSigs)
+
+    s"new SubTrans<$allSubtypeSigs,$overridedSubtypeSigs,$supertypeSigs>($width,$depth)"
+  }
+
+  def quoteSubMethodOverrides(subSigs: List[MethodSig], supSigs: List[MethodSig]) : String = {
+    val subTys = subSigs.map(quoteMethodSig)
+    val supTys = supSigs.map(quoteMethodSig)
+    val subs = subSigs.zip(supSigs).map({
+      case (sub, sup) => quoteSubMethod(sub, sup)
+    })
+    quoteSubPairDepths(subTys,subTys,subs)
+  }
+
+
+  def quoteSubMethod(sub : MethodSig, sup : MethodSig) : String = {
+    // contravariance: sup.paramTypes <: sub.paramTypes
+    val subEnvTy = tupleType(sup.paramTypes.map(quoteType))
+    val supEnvTy = tupleType(sub.paramTypes.map(quoteType))
+    // covariance: sub.retTy <: sup.retTy
+    val subRetTy = quoteType(sub.retTy)
+    val supRetTy = quoteType(sup.retTy)
+    val subEnv   = quoteSubtypeTypes(sup.paramTypes, sub.paramTypes)
+    val subRet = quoteSubtypeType(sub.retTy, sup.retTy)
+    s"new SubBoundExpr<$supEnvTy,$subEnvTy,$subRetTy,$supRetTy>($subEnv,$subRet)"
+  }
+
+  def quoteSubtypeType(sub : Type, sup : Type) : String = {
+    if(alphaEquivTy(sub,sup))
+      return s"new SubRefl<${quoteType(sub)}>()"
+
+    (normalizeTy(sub),normalizeTy(sup)) match {
+      case (_,Top) =>
+        s"new SubTop<${quoteType(sub)}>()"
+      case (TForallK(nm1,bdy1),TForallK(nm2,bdy2)) =>
+        val newBdy1 = substTy(Map(nm1 -> KVar(nm2)), Map(), bdy1)
+        val qBdy1 = quoteType(newBdy1)
+        val qBdy2 = quoteType(bdy2)
+        val subBdy = quoteSubtypeType(newBdy1,bdy2)
+        s"new SubForallK<Λ$nm2.$qBdy1,Λ$nm2.$qBdy2>(Λ+$nm2.$subBdy)"
+      case (TForallTy(nm1,Left(k1),bdy1), TForallTy(nm2,Left(k2),bdy2)) =>
+        assert(alphaEquivK(k1,k2))
+        val newBdy1 = substTy(Map(), Map(nm1 -> TVar(nm2)), bdy1)
+        val qBdy1 = quoteType(newBdy1)
+        val qBdy2 = quoteType(bdy2)
+        val subBdy = quoteSubtypeType(newBdy1,bdy2)
+        val ppK = pprintKind(k1)
+        s"new SubForallTy<+$ppK,λ$nm2:$ppK.$qBdy1,λ$nm2:$ppK.$qBdy2>(Λ$nm2:$ppK.$subBdy)"
+      case (sub,sup) =>
+        val subParent = getParentType(sub)
+        val qSub1 = quoteSubtypeClass(sub)
+        if(alphaEquivTy(subParent, sup))
+          return qSub1
+        val qSubTy = quoteType(sub)
+        val qSubParentTy = quoteType(subParent)
+        val qSupTy = quoteType(sup)
+        val qSub2 = quoteSubtypeType(subParent,sup)
+        s"new SubTrans<$qSubTy,$qSubParentTy,$qSupTy>($qSub1,$qSub2)"
+    }
+  }
+
+  def quoteSubtypeTypes(subs : List[Type], sups : List[Type]) : String = {
+    val (qSubTys,qSupTys,qSubs) =
+      subs
+      .zip(sups)
+      .map(p => (quoteType(p._1), quoteType(p._2), quoteSubtypeType(p._1,p._2)))
+      .unzip3
+    quoteSubPairDepths(qSubTys, qSupTys, qSubs)
+  }
+
 
   def quoteSubPairWidths(extraFieldTys: List[String], parentFieldsTupleTy: String) : String = {
     val refl = s"new SubRefl<$parentFieldsTupleTy>()"

@@ -1,6 +1,8 @@
 package FGJU
 
-case class Ident(nm : String, id : Int)
+case class Ident(nm : String, id : Int) {
+  override def toString: String = nm + id
+}
 
 object freshen {
   def apply(i:Ident) : Ident = i match { case Ident(nm,_) => Ident(nm,uniqueId()) }

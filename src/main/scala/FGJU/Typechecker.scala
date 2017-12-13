@@ -220,21 +220,7 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
 
     // precondition: sub and sup are both valid types
     if (alphaEquivTy(sub, sup)) return ()
-    /*
-    if(sub.isInstanceOf[TVar]) {
-      var TVar(nm) = sub.asInstanceOf[TVar]
-      if(tDefs contains nm) {
-        assertIsSubtypeOf(sub,tDefs(nm)._2)
-        return ()
-      }
-    }
-    */
-    //if (sup == Top) return ()
     sub match {
-        /*
-      case TVar(nm) if tDefs contains nm =>
-        assertIsSubtypeOf(tDefs(nm)._2,sup)
-        */
       case TVar(nm) if tEnv contains nm =>
         val kindOrBound: Either[Kind, Type] = tEnv(nm)
         val parent: Type = kindOrBound match {
@@ -412,7 +398,7 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
       val methods = cd.methods.map(methodSig)
       val parentMethods = getMethods(getParentType(t))
       val nms = Set() ++ parentMethods.map(_.nm)
-      parentMethods ++ methods.filterNot(m => nms.contains(m.nm))
+      methods.filterNot(m => nms.contains(m.nm)) ++ parentMethods
     case _ =>
       throw new Exception(s"getFields: type $t has no fields")
   }
@@ -563,6 +549,9 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
 
   // precondition: both MethodSigs have been freshened.
   def assertValidMethodSigOverride(subSig : MethodSig, superSig : MethodSig) : Unit = {
+    // method names should be identical
+    assert(subSig.nm == superSig.nm)
+
     // check the generic parameters
     assert(subSig.tParams.length == superSig.tParams.length,
       "assertValidMethodSigOverride: overriding methods must have the same number of generic parameters"

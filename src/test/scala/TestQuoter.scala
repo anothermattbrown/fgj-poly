@@ -99,6 +99,63 @@ class TestQuoter extends FlatSpec with Matchers {
     myQ.assertIsSubtypeOf(actualTy,expectedTy)
   }
 
+  "quoteSubtypeClassMethods for a class with no methods" should "parse and typecheck" in {
+    val A = parser.parseClassDecl("class A{}")
+    val myQ = q.addClassDecl(A)
+    val src = myQ.quoteSubtypeClassMethods(TVar("A"))
+    val sub = parser.parseExpr(src)
+    val actualTy = myQ.tcExpr(sub)
+  }
+
+  "quoteSubTy" should "handle reflexivity" in {
+    val A = parser.parseClassDecl("class A{}")
+    val myQ = q.addClassDecl(A)
+    val tyA = TVar("A")
+    val src = myQ.quoteSubtypeType(tyA,tyA)
+    val sub = parser.parseExpr(src)
+    val expectedTy = parser.parseTy("SubRefl<Pair<Nil,Nil>>")
+    val actualTy = myQ.tcExpr(sub)
+    myQ.assertIsSubtypeOf(actualTy,expectedTy)
+  }
+
+  "quoteSubTy" should "handle Top subtypings" in {
+    val A = parser.parseClassDecl("class A{ Top f; }")
+    val myQ = q.addClassDecl(A)
+    val tyA = TVar("A")
+    val src = myQ.quoteSubtypeType(tyA,Top)
+    val sub = parser.parseExpr(src)
+    val expectedTy = parser.parseTy(s"SubTop<${myQ.quoteType(tyA)}>")
+    val actualTy = myQ.tcExpr(sub)
+    myQ.assertIsSubtypeOf(actualTy,expectedTy)
+  }
+
+  "quoteSubTy" should "handle type-quantified types" in {
+    val A = parser.parseClassDecl("class A{}")
+    val myQ = q.addClassDecl(A)
+    val tySub = parser.parseTy("<X:*>A")
+    val qTySub = myQ.quoteType(tySub)
+    val tySup = parser.parseTy("<X:*>Top")
+    val qTySup = myQ.quoteType(tySup)
+    val src = myQ.quoteSubtypeType(tySub,tySup)
+    val sub = parser.parseExpr(src)
+    val expectedTy = parser.parseTy(s"Sub<$qTySub, $qTySup>")
+    val actualTy = myQ.tcExpr(sub)
+    myQ.assertIsSubtypeOf(actualTy, expectedTy)
+  }
+
+  "quoteSubTy" should "handle kind-quantified types" in {
+    val A = parser.parseClassDecl("class A{}")
+    val myQ = q.addClassDecl(A)
+    val tySub = parser.parseTy("<+X>A")
+    val qTySub = myQ.quoteType(tySub)
+    val tySup = parser.parseTy("<+X>Top")
+    val qTySup = myQ.quoteType(tySup)
+    val src = myQ.quoteSubtypeType(tySub,tySup)
+    val sub = parser.parseExpr(src)
+    val expectedTy = parser.parseTy(s"Sub<$qTySub, $qTySup>")
+    val actualTy = myQ.tcExpr(sub)
+    myQ.assertIsSubtypeOf(actualTy, expectedTy)
+  }
 
 
   // Variable tests
