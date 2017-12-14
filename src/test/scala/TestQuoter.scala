@@ -157,7 +157,51 @@ class TestQuoter extends FlatSpec with Matchers {
     myQ.assertIsSubtypeOf(actualTy, expectedTy)
   }
 
+  "quoteSubTy" should "handle transitive subtypings" in {
+    val A = parser.parseClassDecl("class A{}")
+    val B = parser.parseClassDecl("class B extends A{Top f;}")
+    val C = parser.parseClassDecl("class C extends B{Top g;}")
+    val myQ = q.addClassDecls(List(A,B,C))
+    val tySub = parser.parseTy("C")
+    val qTySub = myQ.quoteType(tySub)
+    val tySup = parser.parseTy("A")
+    val qTySup = myQ.quoteType(tySup)
+    val src = myQ.quoteSubtypeType(tySub,tySup)
+    val sub = parser.parseExpr(src)
+    val expectedTy = parser.parseTy(s"Sub<$qTySub, $qTySup>")
+    val actualTy = myQ.tcExpr(sub)
+    myQ.assertIsSubtypeOf(actualTy, expectedTy)
+  }
 
+  "quoteSubTy" should "handle width subtyping of methods" in {
+    val A = parser.parseClassDecl("class A{}")
+    val B = parser.parseClassDecl("class B extends A{Top m(Top x){ return x; }}")
+    val myQ = q.addClassDecls(List(A,B))
+    val tySub = parser.parseTy("B")
+    val qTySub = myQ.quoteType(tySub)
+    val tySup = parser.parseTy("A")
+    val qTySup = myQ.quoteType(tySup)
+    val src = myQ.quoteSubtypeType(tySub,tySup)
+    val sub = parser.parseExpr(src)
+    val expectedTy = parser.parseTy(s"Sub<$qTySub, $qTySup>")
+    val actualTy = myQ.tcExpr(sub)
+    myQ.assertIsSubtypeOf(actualTy, expectedTy)
+  }
+
+  "quoteSubTy" should "handle depth subtyping of methods" in {
+    val A = parser.parseClassDecl("class A{A m(A a) {return a;} }")
+    val B = parser.parseClassDecl("class B extends A{B m(Top x){ return this; }}")
+    val myQ = q.addClassDecls(List(A,B))
+    val tySub = parser.parseTy("B")
+    val qTySub = myQ.quoteType(tySub)
+    val tySup = parser.parseTy("A")
+    val qTySup = myQ.quoteType(tySup)
+    val src = myQ.quoteSubtypeType(tySub,tySup)
+    val sub = parser.parseExpr(src)
+    val expectedTy = parser.parseTy(s"Sub<$qTySub, $qTySup>")
+    val actualTy = myQ.tcExpr(sub)
+    myQ.assertIsSubtypeOf(actualTy, expectedTy)
+  }
   // Variable tests
   """newVarExpr("x")""" should "parse and typecheck" in {
     val myQ : Quoter =

@@ -67,20 +67,23 @@ class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
   }
 
   def quoteFieldsTupleType(t : Type) : String = tupleType(getFields(t).map(p => quoteType(p._2)))
-  def quoteMethodTypes(t : Type) : List[String] = {
+  def quoteBindMethodTys(t : Type) : List[String] = {
     val fieldsTy = quoteFieldsTupleType(t)
     getMethods(t).map(s => s"Fun<$fieldsTy,${quoteMethodSig(s)}>")
   }
-  def quoteMethodsTupleTy(t : Type) : String = tupleType(quoteMethodTypes(t))
+  def quoteBindMethodTysTuple(t : Type) : String = tupleType(quoteBindMethodTys(t))
+
+  def quoteMethodSigs(t:Type) : List[String] = getMethods(t).map(quoteMethodSig)
+  def quoteMethodSigsTuple(t:Type) : String = tupleType(quoteMethodSigs(t))
 
   def quoteClass(cd : ClassDecl) : String = {
     val (t,q) = classType(cd)
     val fieldsTupleTy = q.quoteFieldsTupleType(t)
-    val methodTys = q.quoteMethodTypes(t)
-    val methodsTupleTy = q.tupleType(methodTys)
+    val bindMethodTys = q.quoteBindMethodTys(t)
+    val methodsTupleTy = q.quoteMethodSigs(t)
     val superTy = q.quoteType(q.getParentType(t))
     val methods = cd.methods.map(q.quoteMethod)
-    val methodsTuple = q.tuple(methods,methodTys)
+    val methodsTuple = q.tuple(methods,bindMethodTys)
     val sub = q.quoteSubtypeClass(t)
     cd.params.foldRight(s"new Class<$fieldsTupleTy,$methodsTupleTy,$superTy>($methodsTuple,$sub)")(q.quoteGVarDecl)
   }
@@ -96,12 +99,12 @@ class Quoter(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
   def quoteSubtypeClass(t : Type) : String = {
     val p = getParentType(t)
     val fieldsTupleType = quoteFieldsTupleType(t)
-    val methodsTupleType = quoteMethodsTupleTy(t)
+    val methodSigsTuple = quoteMethodSigsTuple(t)
     val parentFieldsTupleType : String = quoteFieldsTupleType(p)
-    val parentMethodsTupleType : String = quoteMethodsTupleTy(p)
+    val parentMethodsTupleType : String = quoteBindMethodTysTuple(p)
     val fieldSub = quoteSubtypeClassFields(t)
     val methodSub = quoteSubtypeClassMethods(t)
-    s"new SubPairDepth<$fieldsTupleType,$methodsTupleType,$parentFieldsTupleType,$parentMethodsTupleType>($fieldSub,$methodSub)"
+    s"new SubPairDepth<$fieldsTupleType,$methodSigsTuple,$parentFieldsTupleType,$parentMethodsTupleType>($fieldSub,$methodSub)"
   }
 
   def quoteSubtypeClassFields(t: Type) : String = {
