@@ -230,6 +230,178 @@ object Representation2 {
 
   // TODO example involving upcasting a polymorphic method
 
+  // Challenge: (mutual) recursion in classes. any class can refer to any other class.
+  // unlike C, there is no ordering requirement. We need a class table! But the type system is not
+  // powerful enough.
+
+  /*
+
+  Looks like we need a kind-polymorphic mu operator:
+
+  Mu : \/X. ((X -> *) -> (X -> *)) -> X -> *
+
+  A = (B -> B)
+  B = (A -> A)
+
+  A = \A. \B. B -> B
+  B = \A. \B. A -> A
+
+  K2 = (* -> * -> *)
+  AB = (\AB:(* -> * -> *) -> *. \f : * -> * -> *. f (A (fst AB) (snd AB)) (B (fst AB) (snd AB)))
+
+  A = Mu<+K2,AB,fst>
+  B = Mu<+K2,AB,snd>
+
+   */
+
+  val MuSrc =
+    """class Mu<+X,F:((X -> *) -> X -> *),A:X> {
+      |  F<λB:X.Mu<+X,F,B>,A> unfold;
+      |}
+    """.stripMargin
+
+  /* class A { B m(B b) { return b; } }
+     class B { A m(A a) { return a; } }
+   */
+  val Example4 =
+    """letType TOP : * = Pair<Nil,Nil> in
+      |let TOPClass : Class<Nil,Nil,TOP> =
+      |  new Class<Nil,Nil,TOP> (
+      |    new BindMethodsNil<TOP>(),
+      |    new SubRefl<Pair<Nil,Nil>>()
+      |  )
+      |in
+      |letKind K2 = * -> * -> * in
+      |letType getA : K2 = \A:*. \B:*. A in
+      |letType getB : K2 = \A:*. \B:*. B in
+      |letType _AMethodSigs : * -> * -> * =
+      |  \A:*. \B:*.
+      |  Pair<BoundExpr<Pair<B,Nil>,B>,Nil>
+      |in
+      |letType _A : * -> * -> * =
+      |  \A:*. \B:*.
+      |  Pair<Nil,_AMethodSigs<A,B>>
+      |in
+      |letType _BMethodSigs : * -> * -> * =
+      |  \A:*. \B:*.
+      |  Pair<BoundExpr<Pair<A,Nil>,A>,Nil>
+      |in
+      |letType _B : * -> * -> * =
+      |  \A:*. \B:*.
+      |  Pair<Nil,_BMethodSigs<A,B>>
+      |in
+      |letType Classes : (K2 -> *) -> K2 -> * =
+      |  \Classes:K2 -> *. \get:K2.
+      |  get<_A<Classes<getA>, Classes<getB>>,
+      |      _B<Classes<getA>, Classes<getB>>>
+      |in
+      |letType A : * = Mu<+K2,Classes,getA> in
+      |letType B : * = Mu<+K2,Classes,getB> in
+      |letType AMethodSigs : * = _AMethodSigs<A,B> in
+      |letType BMethodSigs : * = _BMethodSigs<A,B> in
+      |let Aunfold : _A<A,B> =
+      |  new Pair<Nil,AMethodSigs>(
+      |    new Nil(),
+      |    new Pair<BoundExpr<Pair<B,Nil>,B>,Nil>(
+      |      new SomeBoundExpr<Nil,Pair<B,Nil>,B>(
+      |        new Delay<Nil>(new Nil()),
+      |        new VarExpr<Nil,Pair<B,Nil>,B>(
+      |          new IndexZ<B,Nil>()
+      |        )
+      |      ),
+      |      new Nil()
+      |    )
+      |  )
+      |in
+      |let a : A = new Mu<+K2,Classes,getA>(Aunfold) in
+      |let Bunfold : _B<A,B> =
+      |  new Pair<Nil,BMethodSigs>(
+      |    new Nil(),
+      |    new Pair<BoundExpr<Pair<A,Nil>,A>,Nil>(
+      |      new SomeBoundExpr<Nil,Pair<A,Nil>,A>(
+      |        new Delay<Nil>(new Nil()),
+      |        new VarExpr<Nil,Pair<A,Nil>,A>(
+      |          new IndexZ<A,Nil>()
+      |        )
+      |      ),
+      |      new Nil()
+      |    )
+      |  )
+      |in
+      |let b : B = new Mu<+K2,Classes,getB>(Bunfold) in
+      |letType AunfoldTy : * = Pair<Nil,AMethodSigs> in
+      |
+      |let Amethod : Expr<A,Pair<B,Nil>,B> =
+      |  new VarExpr<A,Pair<B,Nil>,B>(
+      |    new IndexZ<B,Nil>()
+      |  )
+      |in
+      |let Aclass : MuClass<+K2,Classes,getA,Nil,AMethodSigs,TOP> =
+      |  new MuClass<+K2,Classes,getA,Nil,AMethodSigs,TOP>(
+      |    new Refl<AunfoldTy>(),
+      |    new BindMethodsCons<A,BoundExpr<Pair<B,Nil>,B>,Nil>(
+      |      new ExprBinder<A,Pair<B,Nil>,B>(Amethod),
+      |      new BindMethodsNil<A>()
+      |    ),
+      |    new SubTop<A>()
+      |  )
+      |in
+      |a
+    """.stripMargin
+
+  // New class for Mu
+  val MuClassSrc =
+    """class MuClass<+N,Classes : (N -> *) -> N -> * ,i:N,
+      |              Fields,Methods,Super> {
+      |  Eq<Classes<Mu<+N,Classes>,i>,Pair<Fields,Methods>> eq;
+      |  Fun<Lazy<Mu<+N,Classes,i>>, Methods> methods;
+      |  Sub<Mu<+N,Classes,i>, Super> sub;
+      |}
+    """.stripMargin
+
+  val SubMuSrc =
+    """class SubMu<+N,Classes:(N -> *) -> N -> *, subI:N, supI:N>
+      |  extends Sub<Mu<+N,Classes,subI>, Mu<+N,Classes,supI>> {
+      |  Sub<Classes<Mu<+N,Classes>,subI>, Classes<Mu<+N,Classes>,supI>> subUnfold;
+      |}
+    """.stripMargin
+  /*
+  val OSrc =
+    """class O<I:* -> *> {
+      |  <Ret> Ret accept(OVisitor v) {
+      |    return this.<Ret>accept(v);
+      |  }
+      |}
+    """.stripMargin
+
+  val PackOSrc =
+    """class PackO<I:* -> *,J:* -> *> {
+      |  O<I> sub;
+      |  I<O<I>>
+      |}
+    """.stripMargin
+
+  val OSrc =
+    """class O<FI:* -> *, MI:* -> *> {
+      |  <Ret> Ret accept(OVisitor v) {
+      |    return this.<Ret>accept(v);
+      |  }
+      |}
+    """.stripMargin
+
+  val PackOSrc =
+    """class PackO<T,FI:* -> *, MI:* -> *> extends O<FI,MI> {
+      |  Sub<T,Obj<FI,MI>> sub;
+      |  FI<Obj<FI,MI>> fields;
+      |  Fun<T, MI<Obj<FI,MI>>> methods;
+      |
+      |  <Ret> Ret accept(OVisitor v) {
+      |    return v.openO(sub,fields,methods);
+      |  }
+      |}
+    """.stripMargin
+    */
+
   // how should we represent instantiations of generic methods?
   // this version is deep: it allows us to inspect each instantiation.
   // so we can do this if we need to, but it seems to add little value.
@@ -297,6 +469,15 @@ object Representation2 {
     """class Lazy<T> {
       |  T force() {
       |    return this.force();
+      |  }
+      |}
+    """.stripMargin
+
+  val DelaySrc =
+    """class Delay<T> extends Lazy<T> {
+      |  T t;
+      |  T force() {
+      |    return this.t;
       |  }
       |}
     """.stripMargin
@@ -1012,6 +1193,9 @@ object Representation2 {
     """.stripMargin
 
   val classDecls = List(
+    ("Mu", MuSrc),
+    ("MuClass", MuClassSrc),
+    ("SubMu", SubMuSrc),
     ("Sub",            SubSrc),
     ("SubRefl",        SubReflSrc),
     ("SubTrans",       SubTransSrc),
@@ -1055,6 +1239,7 @@ object Representation2 {
     ("TPolyExprBinder", TPolyExprBinderSrc),
     ("KPolyExprBinder", KPolyExprBinderSrc),
     ("Lazy",          LazySrc),
+    ("Delay",         DelaySrc),
     ("Constructor",   ConstructorSrc),
     ("BindMethodsNil", BindMethodsNilSrc),
     ("BindMethodsCons", BindMethodsConsSrc),

@@ -159,8 +159,10 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
     case (KVar(nm1),KVar(nm2)) => kMap.getOrElse(nm1,nm1) == nm2
     case (KArr(l1,r1),KArr(l2,r2)) => alphaEquivK(l1,l2,kMap) && alphaEquivK(r1,r2,kMap)
     case (KForall(nm1,bdy1), KForall(nm2,bdy2)) => alphaEquivK(bdy1,bdy2,kMap + (nm1 -> nm2))
+    case (KVar(nm),_) if kDefs contains(nm) => alphaEquivK(kDefs(nm),k2)
+    case (_,KVar(nm)) if kDefs contains(nm) => alphaEquivK(k1,kDefs(nm))
     case _ =>
-      throw new Exception("alphaEquivK: match error")
+      throw new Exception(s"alphaEquivK: match error: k1=$k1, k2=$k2")
   }
 
   def alphaEquivKindOrBound(kb1 : Either[Kind,Type],kb2 : Either[Kind,Type],tMap : Map[Ident,Ident] = Map(),kMap : Map[Ident,Ident] = Map()) : Boolean =
@@ -215,8 +217,8 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
   def assertIsSubtypeOf(sub1: Type, sup1: Type): Unit = {
     // first, expand any letType definitions
     val tDefsSubst = tDefs.mapValues(_._2)
-    val sub = substTy(Map(), tDefsSubst, sub1)
-    val sup = substTy(Map(), tDefsSubst, sup1)
+    val sub = normalizeTy(substTy(Map(), tDefsSubst, sub1))
+    val sup = normalizeTy(substTy(Map(), tDefsSubst, sup1))
 
     // precondition: sub and sup are both valid types
     if (alphaEquivTy(sub, sup)) return ()
@@ -424,8 +426,12 @@ class Typechecker(cEnv: ListMap[Ident, ClassDecl] = ListMap(),
         case ((nm,t), e) =>
           val eTy = tcExpr(e)
           val fTy = normalizeTy(t)
+          // expand type/kind definitions
+          val tSubst = tDefs.mapValues(_._2)
+          val eTy1 = normalizeTy(eTy,tSubst,kDefs)
+          val fTy1 = normalizeTy(fTy,tSubst,kDefs)
           try {
-            assertIsSubtypeOf(eTy, fTy)
+            assertIsSubtypeOf(eTy1, fTy1)
           } catch {
             case exn : Exception =>
               throw new Exception(
