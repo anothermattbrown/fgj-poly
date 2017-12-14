@@ -230,100 +230,6 @@ object Representation2 {
 
   // TODO example involving upcasting a polymorphic method
 
-
-
-  val ValSrc =
-    """class Val<T> {
-      |  <R> R visitVal(ValVisitor<T,R> v) {
-      |    return this.<R>visitVal(v);
-      |  }
-      |}
-    """.stripMargin
-
-  val ValVisitorSrc =
-    """class ValVisitor<T,R> {
-      |  <Fields,Methods,Super>
-      |  R visitVal(Eq<T,Pair<Fields,Methods>> eq,
-      |             Class<Fields,Methods,Super> _class,
-      |             Vals<Fields> fields) {
-      |    return this.<Fields,Methods,Super>visitVal(eq,_class,fields);
-      |  }
-      |}
-    """.stripMargin
-
-  val ValsSrc =
-    """class Vals<Ts> {
-      |  <R> R accept(ValsVisitor<Ts,R> v) {
-      |    return this.<R>accept(v);
-      |  }
-      |}
-    """.stripMargin
-
-  val ValsVisitorSrc =
-    """class ValsVisitor<Ts,R> {
-      |  R nil(Eq<Ts,Nil> eq) { return this.nil(eq); }
-      |
-      |  <Hd,Tl>
-      |  R cons(Eq<Ts,Pair<Hd,Tl>> eq, Val<Hd> val, Vals<Tl> vals) {
-      |    return this.<Hd,Tl>cons(eq,val,vals);
-      |  }
-      |}
-    """.stripMargin
-
-  val NilValsSrc =
-    """class NilVals extends Vals<Nil> {
-      |  <R> R accept(ValsVisitor<Nil,R> v) {
-      |    return v.nil(new Refl<Nil>());
-      |  }
-      |}
-    """.stripMargin
-
-  val ConsValsSrc =
-    """class ConsVals<Hd,Tl> extends Vals<Pair<Hd,Tl>> {
-      |  Val<Hd> hd;
-      |  Vals<Tl> tl;
-      |
-      |  <R> R accept(ValsVisitor<Pair<Hd,Tl>,R> v) {
-      |    return v.<Hd,Tl>cons(new Refl<Pair<Hd,Tl>>(), this.hd, this.tl);
-      |  }
-      |}
-    """.stripMargin
-
-  val EvalExprValSrc =
-    """class EvalExprVal<This,Env,T> extends ExprVisitor<This,Env,T,Val<T>> {
-      |  This _this;
-      |  Env env;
-      |}""".stripMargin
-
-  val EvalExprsValsSrc =
-    """class EvalExprsVals<This,Env,Ts> extends ExprsVisitor<This,Env,Ts,Vals<Ts>> {
-      |  This _this;
-      |  Env env;
-      |
-      |  Vals<Ts> nilExprs(Eq<Ts,Nil> eq) {
-      |    return eq.<Vals>toLeft(
-      |      new NilVals()
-      |    );
-      |  }
-      |
-      |  <Hd,Tl>
-      |  Vals<Ts> consExprs(Eq<Ts,Pair<Hd,Tl>> eq,
-      |                     Expr<This,Env,Hd> hd,
-      |                     Exprs<This,Env,Tl> tl) {
-      |    return eq.<Vals>toLeft(
-      |      new ConsVals<Hd,Tl>(
-      |        hd.<Val<Hd>>accept(
-      |          new EvalExprVal<This,Env,Hd>(this._this,this.env)
-      |        ),
-      |        tl.<Vals<Tl>>accept(
-      |          new EvalExprsVals<This,Env,Tl>(this._this,this.env)
-      |        )
-      |      )
-      |    );
-      |  }
-      |}
-    """.stripMargin
-
   // how should we represent instantiations of generic methods?
   // this version is deep: it allows us to inspect each instantiation.
   // so we can do this if we need to, but it seems to add little value.
@@ -1160,15 +1066,6 @@ object Representation2 {
     ("NoInstantiation", NoInstantiationSrc),
     ("TypeInstantiation", TypeInstantiationSrc),
     ("KindInstantiation", KindInstantiationSrc),
-
-    ("Val", ValSrc),
-    ("ValVisitorSrc", ValVisitorSrc),
-    ("Vals", ValsSrc),
-    ("ValsVisitorSrc", ValsVisitorSrc),
-    ("NilVals", NilValsSrc),
-    ("ConsVals", ConsValsSrc),
-    ("EvalExprVal", EvalExprValSrc),
-    ("EvalExprsVals", EvalExprsValsSrc),
 
     ("PolyIndex", PolyIndexSrc),
     ("PolyIndexZ", PolyIndexZSrc),
