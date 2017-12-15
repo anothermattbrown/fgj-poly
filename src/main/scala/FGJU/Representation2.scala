@@ -349,6 +349,106 @@ object Representation2 {
       |a
     """.stripMargin
 
+  /*
+    A version of Example1 with Mu
+
+    class A{}
+    class B{ A foo() { return new A(); }}
+    new A()
+*/
+  val Example5 =
+    """letType TOP : * = Pair<Nil,Nil> in
+      |let TOPClass : Class<Nil,Nil,TOP> =
+      |  new Class<Nil,Nil,TOP> (
+      |    new BindMethodsNil<TOP>(),
+      |    new SubRefl<Pair<Nil,Nil>>()
+      |  )
+      |in
+      |letKind K2 = * -> * -> * in
+      |letType getA : K2 = \A:*. \B:*. A in
+      |letType getB : K2 = \A:*. \B:*. B in
+      |letType _A : * -> * -> * =
+      |  \A:*. \B:*. Pair<Nil,Nil>
+      |in
+      |letType _BMethodSigs : * -> * -> * =
+      |  \A:*. \B:*.
+      |  Pair<BoundExpr<Nil,A>,Nil>
+      |in
+      |letType _B : * -> * -> * =
+      |  \A:*. \B:*.
+      |  Pair<Nil,_BMethodSigs<A,B>>
+      |in
+      |letType Classes : (K2 -> *) -> K2 -> * =
+      |  \Classes:K2 -> *. \get:K2.
+      |  get<_A<Classes<getA>, Classes<getB>>,
+      |      _B<Classes<getA>, Classes<getB>>>
+      |in
+      |letType A : * = Mu<+K2,Classes,getA> in
+      |letType AFields : * = Nil in
+      |letType AMethods : * = Nil in
+      |letType B : * = Mu<+K2,Classes,getB> in
+      |letType BMethodSigs : * = _BMethodSigs<A,B> in
+      |let AClass : MuClass<+K2,Classes,getA,Nil,Nil,TOP> =
+      |  new MuClass<+K2,Classes,getA,Nil,Nil,TOP> (
+      |    new Refl<Pair<AFields,AMethods>>(),
+      |    new BindMethodsNil<A>(),
+      |    new SubTop<A>()
+      |  )
+      |in
+      |letType BFields : * = Nil in
+      |letType B_foo_args : * = Nil in
+      |letType B_foo_sig  : * = BoundExpr<B_foo_args,A> in
+      |letType BMethods : * = BMethodSigs in
+      |let B_foo_binder : Fun<Lazy<B>,B_foo_sig> =
+      |  new ExprBinder<B,Nil,A>(
+      |    new MuNewExpr<+K2,Classes,getA,B,Nil,AFields,AMethods,TOP>(
+      |      new Refl<Pair<AFields,AMethods>>(),
+      |      AClass,
+      |      new NilExprs<B,B_foo_args>()
+      |    )
+      |  )
+      |in
+      |let bFields : BFields = new Nil() in
+      |let B_method_binders : Fun<Lazy<B>,BMethods> =
+      |  new BindMethodsCons<B,B_foo_sig,Nil>(
+      |    B_foo_binder,
+      |    new BindMethodsNil<B>()
+      |  )
+      |in
+      |letType BUnfoldType : * = Pair<BFields,BMethods> in
+      |let subB : Sub<B,TOP> =
+      |  new SubTop<B>()
+      |in
+      |let BClass : MuClass<+K2,Classes,getB,BFields,BMethods,TOP> =
+      |  new MuClass<+K2,Classes,getB,BFields,BMethods,TOP>(
+      |    new Refl<Pair<BFields,BMethods>>(),
+      |    B_method_binders,
+      |    subB
+      |  )
+      |in
+      |let b : Expr<TOP,Nil,B> =
+      |  new MuNewExpr<+K2,Classes,getB,TOP,Nil,BFields,BMethods,TOP>(
+      |    new Refl<Pair<BFields,BMethods>>(),
+      |    BClass,
+      |    new NilExprs<TOP,Nil>()
+      |  )
+      |in
+      |let B_foo_idx : Index<BMethods,B_foo_sig> =
+      |  new IndexZ<B_foo_sig,Nil>()
+      |in
+      |let a : Expr<TOP,Nil,A> =
+      |  new MuCallExpr<+K2,Classes,getB,BFields,BMethods,B_foo_sig,Nil,TOP,Nil,A>(
+      |    b,
+      |    new Refl<Pair<BFields,BMethods>>(),
+      |    B_foo_idx,
+      |    new NoInstantiation<B_foo_sig>(),
+      |    new NilExprs<TOP,Nil>()
+      |  )
+      |in
+      |a
+    """.stripMargin
+
+
   // New class for Mu
   val MuClassSrc =
     """class MuClass<+N,Classes : (N -> *) -> N -> * ,i:N,
@@ -678,6 +778,7 @@ object Representation2 {
       |  }
       |}
     """.stripMargin
+
   val NewExprSrc =
     """class NewExpr<This,Env,Fields,Methods,Super> extends Expr<This,Env,Pair<Fields,Methods>> {
       |  Class<Fields,Methods,Super> _class;
@@ -686,6 +787,24 @@ object Representation2 {
       |  <Ret> Ret accept(ExprVisitor<This,Env,Pair<Fields,Methods>,Ret> v) {
       |    return v.<Fields,Methods,Super>_new(
       |      new Refl<Pair<Fields,Methods>>(),
+      |      this._class,
+      |      this.fields
+      |    );
+      |  }
+      |}
+    """.stripMargin
+
+  val MuNewExprSrc =
+    """class MuNewExpr<+N,Classes:(N->*)->N->*,i:N,
+      |                This,Env,Fields,Methods,Super> extends Expr<This,Env,Mu<+N,Classes,i>> {
+      |  Eq<Classes<Mu<+N,Classes>,i>,Pair<Fields,Methods>> eqUnfold;
+      |  MuClass<+N,Classes,i,Fields,Methods,Super> _class;
+      |  Exprs<This,Env,Fields> fields;
+      |
+      |  <Ret> Ret accept(ExprVisitor<This,Env,Mu<+N,Classes,i>,Ret> v) {
+      |    return v.<+N,Classes,i,Fields,Methods,Super>muNew(
+      |      new Refl<Mu<+N,Classes,i>>(),
+      |      this.eqUnfold,
       |      this._class,
       |      this.fields
       |    );
@@ -704,6 +823,23 @@ object Representation2 {
       |  }
       |}
     """.stripMargin
+
+  val MuCallExprSrc =
+    """class MuCallExpr<+N,Classes:(N->*)->N->*,i:N,Fields,Methods,M,Args,This,Env,T>
+      |  extends Expr<This,Env,T> {
+      |  Expr<This,Env,Mu<+N,Classes,i>> e;
+      |  Eq<Classes<Mu<+N,Classes>,i>, Pair<Fields,Methods>> eqUnfold;
+      |  Index<Methods,M> method;
+      |  Instantiation<M,BoundExpr<Args,T>> inst;
+      |  Exprs<This,Env,Args> args;
+      |  <Ret> Ret accept(ExprVisitor<This,Env,T,Ret> v) {
+      |    return v.<+N,Classes,i,Fields,Methods,M,Args>muCall(
+      |      this.e, this.eqUnfold, this.method, this.inst, this.args
+      |    );
+      |  }
+      |}
+    """.stripMargin
+
 
 
   // TODO generalize cast. subtype is not always a class, since we
@@ -724,6 +860,14 @@ object Representation2 {
       |    return this.<Fields,Methods>field(e,fld);
       |  }
       |
+      |  <+N,Classes:(N->*)->N->*,i:N,Fields,Methods>
+      |  Ret
+      |  muField(Expr<This,Env,Mu<+N,Classes,i>> e,
+      |          Eq<Classes<Mu<+N,Classes>,i>, Pair<Fields,Methods>> eqUnfold,
+      |          Index<Fields,T> idx) {
+      |    return this.<+N,Classes,i,Fields,Methods>muField(e,eqUnfold,idx);
+      |  }
+      |
       |  <Fields,Methods,M,As>
       |  Ret
       |  call(Expr<This,Env,Pair<Fields,Methods>> e,
@@ -733,12 +877,31 @@ object Representation2 {
       |    return this.<Fields,Methods,M,As>call(e,method,inst,as);
       |  }
       |
+      |  <+N,Classes:(N->*)->N->*,i:N,Fields,Methods,M,Args>
+      |  Ret
+      |  muCall(Expr<This,Env,Mu<+N,Classes,i>> e,
+      |         Eq<Classes<Mu<+N,Classes>,i>, Pair<Fields,Methods>> eqUnfold,
+      |         Index<Methods,M> method,
+      |         Instantiation<M,BoundExpr<Args,T>> inst,
+      |         Exprs<This,Env,Args> args) {
+      |    return this.<+N,Classes,i,Fields,Methods,M,Args>muCall(e,eqUnfold,method,inst,args);
+      |  }
+      |
       |  <Fields,Methods,Super>
       |  Ret
       |  _new(Eq<T,Pair<Fields,Methods>> eq,
       |       Class<Fields,Methods,Super> _class,
       |       Exprs<This,Env,Fields> fields) {
       |    return this.<Fields,Methods,Super>_new(eq,_class,fields);
+      |  }
+      |
+      |  <+N,Classes:(N->*)->N->*,i:N,Fields,Methods,Super>
+      |  Ret
+      |  muNew(Eq<T,Mu<+N,Classes,i>> eq,
+      |        Eq<Classes<Mu<+N,Classes>,i>,Pair<Fields,Methods>> eqUnfold,
+      |        MuClass<+N,Classes,i,Fields,Methods,Super> _class,
+      |        Exprs<This,Env,Fields> fields) {
+      |    return this.<+N,Classes,i,Fields,Methods,Super>muNew(eq,eqUnfold,_class,fields);
       |  }
       |
       |  <Fields,Methods,Super>
@@ -1212,7 +1375,9 @@ object Representation2 {
     ("CallMethodExpr", CallMethodSrc),
     */
     ("NewExpr", NewExprSrc),
+    ("MuNewExpr", MuNewExprSrc),
     ("CallExpr", CallExprSrc),
+    ("MuCallExpr", MuCallExprSrc),
     ("ExprVisitor", ExprVisitorSrc),
     ("Pair",        PairSrc),
     ("Nil",         NilSrc),
