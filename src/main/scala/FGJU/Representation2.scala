@@ -448,6 +448,117 @@ object Representation2 {
       |a
     """.stripMargin
 
+  /*
+  Now let's make sure we can handle generic classes too.
+
+  class A{}
+  class B<T>{ T foo(T x) { return x; }}
+  new B<T>().foo(new A())
+
+*/
+  val Example6 =
+    """letType TOP : * = Pair<Nil,Nil> in
+      |let TOPClass : Class<Nil,Nil,TOP> =
+      |  new Class<Nil,Nil,TOP> (
+      |    new BindMethodsNil<TOP>(),
+      |    new SubRefl<Pair<Nil,Nil>>()
+      |  )
+      |in
+      |letKind KClasses = * -> (* -> *) -> * in
+      |letType getA : KClasses = \A:*. \B:(* -> *). A in
+      |letType getB : * -> KClasses = \T:*. \A:*. \B:(* -> *). B<T> in
+      |letType _A : * -> (* -> *) -> * =
+      |  \A:*. \B:* -> *. Pair<Nil,Nil>
+      |in
+      |letType _BMethodSigs : * -> (* -> *) -> * -> * =
+      |  \A:*. \B:* -> *. \T:*.
+      |  Pair<BoundExpr<Pair<T,Nil>,T>,Nil>
+      |in
+      |letType _B : * -> (* -> *) -> * -> * =
+      |  \A:*. \B:* -> *. \T:*.
+      |  Pair<Nil,_BMethodSigs<A,B,T>>
+      |in
+      |letType Classes : (KClasses -> *) -> KClasses -> * =
+      |  \Classes:KClasses -> *. \get:KClasses.
+      |  get<_A<Classes<getA>, \T:*. Classes<getB<T>>>,
+      |      _B<Classes<getA>, \T:*. Classes<getB<T>>>>
+      |in
+      |letType A : * = Mu<+KClasses,Classes,getA> in
+      |letType AFields : * = Nil in
+      |letType AMethods : * = Nil in
+      |letType B : * -> * = \T:*. Mu<+KClasses,Classes,getB<T>> in
+      |letType BMethodSigs : * -> * = \T:*. _BMethodSigs<A,B,T> in
+      |let AClass : MuClass<+KClasses,Classes,getA,Nil,Nil,TOP> =
+      |  new MuClass<+KClasses,Classes,getA,Nil,Nil,TOP> (
+      |    new Refl<Pair<AFields,AMethods>>(),
+      |    new BindMethodsNil<A>(),
+      |    new SubTop<A>()
+      |  )
+      |in
+      |letType BFields : * = Nil in
+      |letType B_foo_args : * -> * = \T:*. Pair<T,Nil> in
+      |letType B_foo_sig  : * -> * = \T:*. BoundExpr<B_foo_args<T>,T> in
+      |letType BMethods   : * -> * = \T:*. BMethodSigs<T> in
+      |let B_foo_binder   : <T:*> Fun<Lazy<B<T>>,B_foo_sig<T>> =
+      |  /\T:*.
+      |  new ExprBinder<B<T>,Pair<T,Nil>,T>(
+      |    new VarExpr<B<T>, Pair<T,Nil>, T> (
+      |      new IndexZ<T,Nil>()
+      |    )
+      |  )
+      |in
+      |let bFields : BFields = new Nil() in
+      |let B_method_binders : <T:*> Fun<Lazy<B<T>>,BMethods<T>> =
+      |  /\T:*.
+      |  new BindMethodsCons<B<T>,B_foo_sig<T>,Nil>(
+      |    B_foo_binder<T>,
+      |    new BindMethodsNil<B<T>>()
+      |  )
+      |in
+      |letType BUnfoldType : * = <T:*> Pair<BFields,BMethods<T>> in
+      |let subB : <T:*> Sub<B<T>,TOP> =
+      |  /\T.
+      |  new SubTop<B<T>>()
+      |in
+      |let BClass : <T> MuClass<+KClasses,Classes,getB<T>,BFields,BMethods<T>,TOP> =
+      |  /\T.
+      |  new MuClass<+KClasses,Classes,getB<T>,BFields,BMethods<T>,TOP>(
+      |    new Refl<Pair<BFields,BMethods<T>>>(),
+      |    B_method_binders<T>,
+      |    subB<T>
+      |  )
+      |in
+      |let b : Expr<TOP,Nil,B<A>> =
+      |  new MuNewExpr<+KClasses,Classes,getB<A>,TOP,Nil,BFields,BMethods<A>,TOP>(
+      |    new Refl<Pair<BFields,BMethods<A>>>(),
+      |    BClass<A>,
+      |    new NilExprs<TOP,Nil>()
+      |  )
+      |in
+      |let B_foo_idx : <T> Index<BMethods<T>,B_foo_sig<T>> =
+      |  /\T.
+      |  new IndexZ<B_foo_sig<T>,Nil>()
+      |in
+      |let aExpr : Expr<TOP,Nil,A> =
+      |  new MuNewExpr<+KClasses,Classes,getA,TOP,Nil,AFields,AMethods,TOP>(
+      |    new Refl<Pair<AFields,AMethods>>(),
+      |    AClass,
+      |    new NilExprs<TOP,Nil>()
+      |  )
+      |in
+      |let callExpr : Expr<TOP,Nil,A> =
+      |  new MuCallExpr<+KClasses,Classes,getB<A>,BFields,BMethods<A>,B_foo_sig<A>,B_foo_args<A>,TOP,Nil,A>(
+      |    b,
+      |    new Refl<Pair<BFields,BMethods<A>>>(),
+      |    B_foo_idx<A>,
+      |    new NoInstantiation<B_foo_sig<A>>(),
+      |    new ConsExprs<TOP,Nil,A,Nil>(
+      |      aExpr, new NilExprs<TOP,Nil>()
+      |    )
+      |  )
+      |in
+      |callExpr
+    """.stripMargin
 
   // New class for Mu
   val MuClassSrc =

@@ -26,6 +26,7 @@ class TestRepresentation2 extends FlatSpec with Matchers {
     ("Example3", Example3),
     ("Example4", Example4),
     ("Example5", Example5),
+    ("Example6", Example6),
   )
 
   it should "typecheck all examples" in {
